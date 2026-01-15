@@ -12,7 +12,7 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # HTTP client for OpenWeatherMap
-reqwest = { version = "0.13", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "query"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
