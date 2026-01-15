@@ -1,0 +1,23 @@
+# Weathrs Configuration
+# Copy this file to config.toml or config.local.toml
+
+# Required: OpenWeatherMap API key
+openweathermap_api_key = "your_api_key_here"
+
+# Server configuration
+host = "0.0.0.0"
+port = 3000
+
+# Weather defaults
+default_city = "London"
+units = "metric"  # metric, imperial, or standard
+
+# Display configuration - what to show in weather response
+[display]
+temperature = true
+feels_like = true
+humidity = true
+wind_speed = true
+description = true
+pressure = false
+visibility = false
