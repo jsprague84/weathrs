@@ -1,4 +1,4 @@
-use config::{Config, ConfigError, Environment, File};
+use config::{Case, Config, ConfigError, Environment, File};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -111,9 +111,12 @@ impl AppConfig {
             .add_source(File::with_name("config").required(false))
             .add_source(File::with_name("config.local").required(false))
             // Override with environment variables (prefixed with WEATHRS_)
+            // Convert SCREAMING_SNAKE_CASE env vars to snake_case config keys
             .add_source(
                 Environment::with_prefix("WEATHRS")
+                    .prefix_separator("_")
                     .separator("__")
+                    .convert_case(Case::Snake)
                     .try_parsing(true),
             )
             .build()?;
