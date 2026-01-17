@@ -15,8 +15,10 @@ pub struct GeoLocation {
 
 // ============================================================================
 // One Call API 3.0 Response (Internal)
+// These structs deserialize the raw API response; not all fields are used
 // ============================================================================
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct OneCallResponse {
     pub lat: f64,
@@ -30,6 +32,7 @@ pub struct OneCallResponse {
     pub alerts: Option<Vec<WeatherAlert>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct CurrentWeather {
     pub dt: i64,
@@ -49,12 +52,14 @@ pub struct CurrentWeather {
     pub weather: Vec<WeatherCondition>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct MinutelyForecast {
     pub dt: i64,
     pub precipitation: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct HourlyForecast {
     pub dt: i64,
@@ -81,6 +86,7 @@ pub struct PrecipitationVolume {
     pub one_hour: Option<f64>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct DailyForecast {
     pub dt: i64,
@@ -116,6 +122,7 @@ pub struct DailyTemperature {
     pub morn: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct DailyFeelsLike {
     pub day: f64,
@@ -124,6 +131,7 @@ pub struct DailyFeelsLike {
     pub morn: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 pub struct WeatherCondition {
     pub id: u32,

@@ -4,9 +4,7 @@ mod ntfy;
 pub use gotify::GotifyClient;
 pub use ntfy::NtfyClient;
 
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -43,7 +41,7 @@ pub enum Priority {
 }
 
 impl Priority {
-    pub fn to_ntfy_priority(&self) -> u8 {
+    pub fn as_ntfy_priority(self) -> u8 {
         match self {
             Priority::Min => 1,
             Priority::Low => 2,
@@ -53,7 +51,7 @@ impl Priority {
         }
     }
 
-    pub fn to_gotify_priority(&self) -> u8 {
+    pub fn as_gotify_priority(self) -> u8 {
         match self {
             Priority::Min => 0,
             Priority::Low => 2,
@@ -158,11 +156,4 @@ impl NotificationService {
             None => Err(NotificationError::NoServicesConfigured),
         }
     }
-}
-
-fn create_client() -> Client {
-    Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .expect("Failed to create HTTP client")
 }

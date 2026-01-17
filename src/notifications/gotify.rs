@@ -41,7 +41,7 @@ impl GotifyClient {
         let gotify_msg = GotifyMessage {
             title: message.title.clone(),
             message: message.body.clone(),
-            priority: message.priority.to_gotify_priority(),
+            priority: message.priority.as_gotify_priority(),
         };
 
         let response = self.client.post(&url).json(&gotify_msg).send().await?;

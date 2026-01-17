@@ -36,7 +36,7 @@ impl NtfyClient {
             .client
             .post(&url)
             .header("Title", &message.title)
-            .header("Priority", message.priority.to_ntfy_priority().to_string());
+            .header("Priority", message.priority.as_ntfy_priority().to_string());
 
         // Add tags if present
         if !message.tags.is_empty() {
