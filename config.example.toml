@@ -21,3 +21,56 @@ wind_speed = true
 description = true
 pressure = false
 visibility = false
+
+# Notification services (optional)
+# Configure ntfy and/or gotify for push notifications
+
+# ntfy - https://ntfy.sh
+[notifications.ntfy]
+url = "https://ntfy.sh"
+topic = "your-weather-topic"
+# token = "tk_your_token_here"  # Optional: for protected topics
+
+# gotify - https://gotify.net
+# [notifications.gotify]
+# url = "https://gotify.example.com"
+# token = "your_gotify_app_token"
+
+# Scheduler configuration
+[scheduler]
+enabled = true
+
+# Define scheduled forecast jobs
+# Jobs run on a cron schedule and optionally send notifications
+
+[[scheduler.jobs]]
+id = "morning-weather"
+name = "Morning Weather Report"
+city = "Chicago"
+units = "metric"
+cron = "0 7 * * *"  # Every day at 7:00 AM
+include_daily = true
+include_hourly = false
+enabled = true
+
+# Notification triggers for this job
+[scheduler.jobs.notify]
+on_run = true               # Always notify when job runs
+on_alert = true             # Notify on weather alerts
+on_precipitation = true     # Notify when rain/snow likely (>50%)
+cold_threshold = 0.0        # Notify when temp below this (Celsius)
+heat_threshold = 35.0       # Notify when temp above this (Celsius)
+
+# Example: Second job for a different location
+# [[scheduler.jobs]]
+# id = "evening-nyc"
+# name = "NYC Evening Update"
+# city = "New York"
+# units = "imperial"
+# cron = "0 18 * * *"  # 6:00 PM daily
+# include_daily = true
+# include_hourly = false
+# enabled = true
+# [scheduler.jobs.notify]
+# on_run = true
+# on_alert = true

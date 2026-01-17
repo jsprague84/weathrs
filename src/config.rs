@@ -1,6 +1,8 @@
 use config::{Case, Config, ConfigError, Environment, File};
 use serde::Deserialize;
 
+use crate::scheduler::ForecastJob;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
     /// Server host address
@@ -25,6 +27,57 @@ pub struct AppConfig {
     /// Display configuration
     #[serde(default)]
     pub display: DisplayConfig,
+
+    /// Notification configuration
+    #[serde(default)]
+    pub notifications: NotificationConfig,
+
+    /// Scheduled jobs configuration
+    #[serde(default)]
+    pub scheduler: SchedulerConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct NotificationConfig {
+    /// ntfy configuration
+    #[serde(default)]
+    pub ntfy: Option<NtfyConfig>,
+
+    /// gotify configuration
+    #[serde(default)]
+    pub gotify: Option<GotifyConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct NtfyConfig {
+    /// ntfy server URL (e.g., https://ntfy.sh or self-hosted)
+    pub url: String,
+
+    /// Topic to publish to
+    pub topic: String,
+
+    /// Optional auth token for private topics
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GotifyConfig {
+    /// Gotify server URL
+    pub url: String,
+
+    /// Application token
+    pub token: String,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct SchedulerConfig {
+    /// Whether scheduler is enabled
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// List of scheduled forecast jobs
+    #[serde(default)]
+    pub jobs: Vec<ForecastJob>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

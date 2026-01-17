@@ -1,5 +1,5 @@
 pub mod handlers;
-mod models;
+pub mod models;
 mod service;
 
 pub use service::ForecastService;
