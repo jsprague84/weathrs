@@ -1,0 +1,25 @@
+# Build artifacts
+target/
+debug/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local config (contains secrets)
+config.toml
+config.local.toml
+.env
+
+# Documentation
+*.md
+LICENSE
+
+# CI/CD
+.github/
