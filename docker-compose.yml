@@ -1,0 +1,30 @@
+services:
+  weathrs:
+    image: ghcr.io/jsprague84/weathrs:master
+    container_name: weathrs
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - WEATHRS_OPENWEATHERMAP_API_KEY=${WEATHRS_OPENWEATHERMAP_API_KEY}
+      - WEATHRS_HOST=0.0.0.0
+      - WEATHRS_PORT=3000
+      - WEATHRS_DEFAULT_CITY=${WEATHRS_DEFAULT_CITY:-London}
+      - WEATHRS_UNITS=${WEATHRS_UNITS:-metric}
+      - RUST_LOG=${RUST_LOG:-weathrs=info,tower_http=info}
+      # Optional: ntfy notifications
+      - WEATHRS_NOTIFICATIONS_NTFY_URL=${WEATHRS_NOTIFICATIONS_NTFY_URL:-}
+      - WEATHRS_NOTIFICATIONS_NTFY_TOPIC=${WEATHRS_NOTIFICATIONS_NTFY_TOPIC:-}
+      - WEATHRS_NOTIFICATIONS_NTFY_TOKEN=${WEATHRS_NOTIFICATIONS_NTFY_TOKEN:-}
+      # Optional: gotify notifications
+      - WEATHRS_NOTIFICATIONS_GOTIFY_URL=${WEATHRS_NOTIFICATIONS_GOTIFY_URL:-}
+      - WEATHRS_NOTIFICATIONS_GOTIFY_TOKEN=${WEATHRS_NOTIFICATIONS_GOTIFY_TOKEN:-}
+    # Optional: mount config file instead of using env vars
+    # volumes:
+    #   - ./config.toml:/app/config.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
