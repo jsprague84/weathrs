@@ -123,26 +123,58 @@ impl WeatherService {
         }
     }
 
+    /// Check if input looks like a zip code (digits only, or digits,country)
+    fn is_zip_code(input: &str) -> bool {
+        let parts: Vec<&str> = input.split(',').collect();
+        match parts.as_slice() {
+            [zip] => zip.trim().chars().all(|c| c.is_ascii_digit()),
+            [zip, _country] => zip.trim().chars().all(|c| c.is_ascii_digit()),
+            _ => false,
+        }
+    }
+
     pub async fn get_weather(
         &self,
-        city: &str,
+        location: &str,
         units: &str,
     ) -> Result<WeatherResponse, WeatherError> {
-        tracing::debug!(city = %city, units = %units, "Fetching weather data");
+        tracing::debug!(location = %location, units = %units, "Fetching weather data");
 
-        // Use query builder for proper URL encoding - handles spaces and special chars
-        let response = self
-            .client
-            .get(OPENWEATHERMAP_API_URL)
-            .query(&[("q", city), ("appid", &self.api_key), ("units", units)])
-            .send()
-            .await?;
+        // Build query based on whether input is zip code or city name
+        let response = if Self::is_zip_code(location) {
+            // For zip codes, default to US if no country specified
+            let zip_query = if location.contains(',') {
+                location.to_string()
+            } else {
+                format!("{},US", location)
+            };
+            tracing::debug!(zip = %zip_query, "Using zip code query");
+            self.client
+                .get(OPENWEATHERMAP_API_URL)
+                .query(&[
+                    ("zip", zip_query.as_str()),
+                    ("appid", self.api_key.as_str()),
+                    ("units", units),
+                ])
+                .send()
+                .await?
+        } else {
+            self.client
+                .get(OPENWEATHERMAP_API_URL)
+                .query(&[
+                    ("q", location),
+                    ("appid", self.api_key.as_str()),
+                    ("units", units),
+                ])
+                .send()
+                .await?
+        };
 
         let status = response.status();
         tracing::debug!(status = %status, "Received API response");
 
         if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(WeatherError::CityNotFound(city.to_string()));
+            return Err(WeatherError::CityNotFound(location.to_string()));
         }
 
         if !status.is_success() {
