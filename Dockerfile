@@ -1,5 +1,8 @@
-# Build stage
-FROM rust:latest AS builder
+# Build stage - Alpine for smaller image with musl
+FROM rust:alpine AS builder
+
+# Install build dependencies for native libs
+RUN apk add --no-cache musl-dev
 
 WORKDIR /app
 
@@ -18,12 +21,11 @@ COPY src ./src
 # Build the application
 RUN touch src/main.rs && cargo build --release
 
-# Runtime stage
-FROM debian:bookworm-slim
+# Runtime stage - minimal Alpine image (~6MB)
+FROM alpine:3.21
 
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Only ca-certificates needed for HTTPS
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
@@ -34,7 +36,7 @@ COPY --from=builder /app/target/release/weathrs /app/weathrs
 COPY config.example.toml /app/config.example.toml
 
 # Create non-root user
-RUN useradd -r -s /bin/false weathrs && chown -R weathrs:weathrs /app
+RUN adduser -D -H -s /sbin/nologin weathrs && chown -R weathrs:weathrs /app
 USER weathrs
 
 EXPOSE 3000
