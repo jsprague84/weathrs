@@ -42,13 +42,14 @@ enabled = true
 
 # Define scheduled forecast jobs
 # Jobs run on a cron schedule and optionally send notifications
+# Cron format: "sec min hour day month weekday" (6 fields, not 5!)
 
 [[scheduler.jobs]]
 id = "morning-weather"
 name = "Morning Weather Report"
 city = "Chicago"
 units = "metric"
-cron = "0 7 * * *"  # Every day at 7:00 AM
+cron = "0 0 7 * * *"  # Every day at 7:00 AM (sec min hour day month weekday)
 include_daily = true
 include_hourly = false
 enabled = true
@@ -67,7 +68,7 @@ heat_threshold = 35.0       # Notify when temp above this (Celsius)
 # name = "NYC Evening Update"
 # city = "New York"
 # units = "imperial"
-# cron = "0 18 * * *"  # 6:00 PM daily
+# cron = "0 0 18 * * *"  # 6:00 PM daily (sec min hour day month weekday)
 # include_daily = true
 # include_hourly = false
 # enabled = true
