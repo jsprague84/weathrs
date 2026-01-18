@@ -18,12 +18,7 @@ pub struct JobListResponse {
 #[derive(Debug, Deserialize)]
 pub struct TriggerRequest {
     pub city: String,
-    #[serde(default = "default_units")]
-    pub units: String,
-}
-
-fn default_units() -> String {
-    "metric".to_string()
+    pub units: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,11 +48,8 @@ pub async fn trigger_forecast(
     State(state): State<AppState>,
     Json(request): Json<TriggerRequest>,
 ) -> impl IntoResponse {
-    match state
-        .scheduler_service
-        .run_now(&request.city, &request.units)
-        .await
-    {
+    let units = request.units.unwrap_or_else(|| state.config.units.clone());
+    match state.scheduler_service.run_now(&request.city, &units).await {
         Ok(()) => (
             StatusCode::OK,
             Json(TriggerResponse {
@@ -82,7 +74,8 @@ pub async fn trigger_forecast_by_city(
     State(state): State<AppState>,
     Path(city): Path<String>,
 ) -> impl IntoResponse {
-    match state.scheduler_service.run_now(&city, "metric").await {
+    let units = &state.config.units;
+    match state.scheduler_service.run_now(&city, units).await {
         Ok(()) => (
             StatusCode::OK,
             Json(TriggerResponse {
