@@ -11,6 +11,7 @@ use thiserror::Error;
 use super::models::*;
 
 const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
+const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
 const ONE_CALL_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall";
 const DEFAULT_TIMEOUT_SECS: u64 = 15;
 
@@ -73,8 +74,28 @@ impl ForecastService {
         }
     }
 
-    /// Get coordinates for a city using the Geocoding API
-    pub async fn geocode(&self, city: &str) -> Result<GeoLocation, ForecastError> {
+    /// Check if input looks like a zip code (digits only, or digits,country)
+    fn is_zip_code(input: &str) -> bool {
+        let parts: Vec<&str> = input.split(',').collect();
+        match parts.as_slice() {
+            [zip] => zip.trim().chars().all(|c| c.is_ascii_digit()),
+            [zip, _country] => zip.trim().chars().all(|c| c.is_ascii_digit()),
+            _ => false,
+        }
+    }
+
+    /// Get coordinates for a location using the Geocoding API
+    /// Supports both city names ("Chicago") and zip codes ("60601" or "60601,US")
+    pub async fn geocode(&self, location: &str) -> Result<GeoLocation, ForecastError> {
+        if Self::is_zip_code(location) {
+            self.geocode_zip(location).await
+        } else {
+            self.geocode_city(location).await
+        }
+    }
+
+    /// Geocode by city name
+    async fn geocode_city(&self, city: &str) -> Result<GeoLocation, ForecastError> {
         tracing::debug!(city = %city, "Geocoding city");
 
         let response = self
@@ -99,6 +120,37 @@ impl ForecastService {
             .into_iter()
             .next()
             .ok_or_else(|| ForecastError::CityNotFound(city.to_string()))
+    }
+
+    /// Geocode by zip code (e.g., "60601" or "60601,US")
+    async fn geocode_zip(&self, zip: &str) -> Result<GeoLocation, ForecastError> {
+        // Default to US if no country specified
+        let zip_query = if zip.contains(',') {
+            zip.to_string()
+        } else {
+            format!("{},US", zip)
+        };
+
+        tracing::debug!(zip = %zip_query, "Geocoding zip code");
+
+        let response = self
+            .client
+            .get(ZIP_GEOCODING_API_URL)
+            .query(&[("zip", &zip_query), ("appid", &self.api_key)])
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(ForecastError::ApiError(format!(
+                "Zip geocoding failed: {}",
+                text
+            )));
+        }
+
+        let location: ZipGeoLocation = response.json().await?;
+        Ok(location.into())
     }
 
     /// Get full forecast using One Call API 3.0

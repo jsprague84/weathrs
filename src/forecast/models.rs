@@ -13,6 +13,28 @@ pub struct GeoLocation {
     pub state: Option<String>,
 }
 
+/// Response from ZIP code geocoding API (different format than city)
+#[derive(Debug, Deserialize)]
+pub struct ZipGeoLocation {
+    pub zip: String,
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub country: String,
+}
+
+impl From<ZipGeoLocation> for GeoLocation {
+    fn from(z: ZipGeoLocation) -> Self {
+        GeoLocation {
+            name: z.name,
+            lat: z.lat,
+            lon: z.lon,
+            country: z.country,
+            state: None,
+        }
+    }
+}
+
 // ============================================================================
 // One Call API 3.0 Response (Internal)
 // These structs deserialize the raw API response; not all fields are used
