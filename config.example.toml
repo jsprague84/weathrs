@@ -29,12 +29,18 @@ visibility = false
 
 # Notification services (optional)
 # Configure ntfy and/or gotify for push notifications
+# At least one service must be configured for scheduled job notifications
 
-# ntfy - https://ntfy.sh
-[notifications.ntfy]
-url = "https://ntfy.sh"
-topic = "your-weather-topic"
-# token = "tk_your_token_here"  # Optional: for protected topics
+# ntfy - https://ntfy.sh or self-hosted
+# Authentication: use EITHER token OR username/password (not both)
+# [notifications.ntfy]
+# url = "https://ntfy.sh"
+# topic = "your-weather-topic"
+# Token auth (for ntfy.sh or self-hosted with access tokens):
+# token = "tk_your_token_here"
+# Basic auth (for self-hosted with username/password):
+# username = "your_username"
+# password = "your_password"
 
 # gotify - https://gotify.net
 # [notifications.gotify]

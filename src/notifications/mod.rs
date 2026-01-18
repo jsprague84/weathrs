@@ -2,7 +2,7 @@ mod gotify;
 mod ntfy;
 
 pub use gotify::GotifyClient;
-pub use ntfy::NtfyClient;
+pub use ntfy::{NtfyAuth, NtfyClient};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,18 @@ impl Priority {
     }
 }
 
+/// Configuration for building NotificationService
+pub struct NotificationServiceConfig<'a> {
+    pub client: Client,
+    pub ntfy_url: Option<&'a str>,
+    pub ntfy_topic: Option<&'a str>,
+    pub ntfy_token: Option<&'a str>,
+    pub ntfy_username: Option<&'a str>,
+    pub ntfy_password: Option<&'a str>,
+    pub gotify_url: Option<&'a str>,
+    pub gotify_token: Option<&'a str>,
+}
+
 /// Unified notification service that can send to multiple backends
 pub struct NotificationService {
     ntfy: Option<NtfyClient>,
@@ -74,23 +86,29 @@ impl NotificationService {
         Self { ntfy, gotify }
     }
 
-    pub fn from_config(
-        client: Client,
-        ntfy_url: Option<&str>,
-        ntfy_topic: Option<&str>,
-        ntfy_token: Option<&str>,
-        gotify_url: Option<&str>,
-        gotify_token: Option<&str>,
-    ) -> Self {
-        let ntfy = match (ntfy_url, ntfy_topic) {
+    pub fn from_config(config: NotificationServiceConfig<'_>) -> Self {
+        let ntfy = match (config.ntfy_url, config.ntfy_topic) {
             (Some(url), Some(topic)) => {
-                Some(NtfyClient::new(client.clone(), url, topic, ntfy_token))
+                // Determine auth method: prefer token, then basic auth, then none
+                let auth = if let Some(token) = config.ntfy_token {
+                    Some(NtfyAuth::Token(token.to_string()))
+                } else if let (Some(username), Some(password)) =
+                    (config.ntfy_username, config.ntfy_password)
+                {
+                    Some(NtfyAuth::Basic {
+                        username: username.to_string(),
+                        password: password.to_string(),
+                    })
+                } else {
+                    None
+                };
+                Some(NtfyClient::new(config.client.clone(), url, topic, auth))
             }
             _ => None,
         };
 
-        let gotify = match (gotify_url, gotify_token) {
-            (Some(url), Some(token)) => Some(GotifyClient::new(client, url, token)),
+        let gotify = match (config.gotify_url, config.gotify_token) {
+            (Some(url), Some(token)) => Some(GotifyClient::new(config.client, url, token)),
             _ => None,
         };
 

@@ -36,3 +36,6 @@ anyhow = "1"
 # Environment variables
 dotenvy = "0.15"
 uuid = { version = "1.19.0", features = ["v4"] }
+
+# Encoding
+base64 = "0.22"

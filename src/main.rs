@@ -16,7 +16,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::AppConfig;
 use crate::forecast::{handlers as forecast_handlers, ForecastService};
-use crate::notifications::NotificationService;
+use crate::notifications::{NotificationService, NotificationServiceConfig};
 use crate::scheduler::{handlers as scheduler_handlers, JobConfig, SchedulerService};
 use crate::weather::{handlers as weather_handlers, WeatherService};
 
@@ -116,20 +116,32 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize notification service with shared client
     let notification_service = Arc::new(NotificationService::from_config(
-        http_client.clone(),
-        config.notifications.ntfy.as_ref().map(|n| n.url.as_str()),
-        config.notifications.ntfy.as_ref().map(|n| n.topic.as_str()),
-        config
-            .notifications
-            .ntfy
-            .as_ref()
-            .and_then(|n| n.token.as_deref()),
-        config.notifications.gotify.as_ref().map(|g| g.url.as_str()),
-        config
-            .notifications
-            .gotify
-            .as_ref()
-            .map(|g| g.token.as_str()),
+        NotificationServiceConfig {
+            client: http_client.clone(),
+            ntfy_url: config.notifications.ntfy.as_ref().map(|n| n.url.as_str()),
+            ntfy_topic: config.notifications.ntfy.as_ref().map(|n| n.topic.as_str()),
+            ntfy_token: config
+                .notifications
+                .ntfy
+                .as_ref()
+                .and_then(|n| n.token.as_deref()),
+            ntfy_username: config
+                .notifications
+                .ntfy
+                .as_ref()
+                .and_then(|n| n.username.as_deref()),
+            ntfy_password: config
+                .notifications
+                .ntfy
+                .as_ref()
+                .and_then(|n| n.password.as_deref()),
+            gotify_url: config.notifications.gotify.as_ref().map(|g| g.url.as_str()),
+            gotify_token: config
+                .notifications
+                .gotify
+                .as_ref()
+                .map(|g| g.token.as_str()),
+        },
     ));
 
     if notification_service.is_configured() {

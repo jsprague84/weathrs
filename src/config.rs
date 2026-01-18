@@ -56,8 +56,14 @@ pub struct NtfyConfig {
     /// Topic to publish to
     pub topic: String,
 
-    /// Optional auth token for private topics
+    /// Optional auth token for private topics (use either token OR username/password)
     pub token: Option<String>,
+
+    /// Username for basic authentication (use with password)
+    pub username: Option<String>,
+
+    /// Password for basic authentication (use with username)
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
