@@ -1,6 +1,5 @@
 use reqwest::Client;
 use serde::Serialize;
-use std::time::Duration;
 
 use super::{NotificationError, NotificationMessage};
 
@@ -20,12 +19,7 @@ struct GotifyMessage {
 }
 
 impl GotifyClient {
-    pub fn new(url: &str, token: &str) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to create HTTP client");
-
+    pub fn new(client: Client, url: &str, token: &str) -> Self {
         Self {
             client,
             url: url.trim_end_matches('/').to_string(),
@@ -63,9 +57,13 @@ impl GotifyClient {
 mod tests {
     use super::*;
 
+    fn test_client() -> Client {
+        Client::new()
+    }
+
     #[test]
     fn test_gotify_client_creation() {
-        let client = GotifyClient::new("https://gotify.example.com", "my-app-token");
+        let client = GotifyClient::new(test_client(), "https://gotify.example.com", "my-app-token");
         assert_eq!(client.url, "https://gotify.example.com");
         assert_eq!(client.token, "my-app-token");
     }

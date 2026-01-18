@@ -4,8 +4,13 @@ mod notifications;
 mod scheduler;
 mod weather;
 
-use axum::{routing::get, routing::post, Router};
-use std::sync::Arc;
+use axum::{
+    error_handling::HandleErrorLayer, http::StatusCode, routing::get, routing::post, BoxError,
+    Router,
+};
+use reqwest::Client;
+use std::{sync::Arc, time::Duration};
+use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -15,13 +20,69 @@ use crate::notifications::NotificationService;
 use crate::scheduler::{handlers as scheduler_handlers, JobConfig, SchedulerService};
 use crate::weather::{handlers as weather_handlers, WeatherService};
 
+/// Shared HTTP client configuration
+const HTTP_TIMEOUT_SECS: u64 = 30;
+const HTTP_CONNECT_TIMEOUT_SECS: u64 = 5;
+const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 90;
+
 #[derive(Clone)]
 pub struct AppState {
+    pub http_client: Client,
     pub weather_service: Arc<WeatherService>,
     pub forecast_service: Arc<ForecastService>,
     pub notification_service: Arc<NotificationService>,
     pub scheduler_service: Arc<SchedulerService>,
     pub config: Arc<AppConfig>,
+}
+
+/// Create shared HTTP client with connection pooling
+fn create_http_client() -> Client {
+    Client::builder()
+        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+        .pool_idle_timeout(Duration::from_secs(HTTP_POOL_IDLE_TIMEOUT_SECS))
+        .pool_max_idle_per_host(10)
+        .build()
+        .expect("Failed to create HTTP client")
+}
+
+/// Handle request timeout errors
+async fn handle_timeout_error(err: BoxError) -> (StatusCode, String) {
+    if err.is::<tower::timeout::error::Elapsed>() {
+        (StatusCode::REQUEST_TIMEOUT, "Request timed out".to_string())
+    } else {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Internal error: {}", err),
+        )
+    }
+}
+
+/// Graceful shutdown signal handler
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for ctrl+c");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to listen for SIGTERM")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("Shutdown signal received, starting graceful shutdown");
 }
 
 #[tokio::main]
@@ -39,12 +100,23 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::load()?;
     tracing::info!("Configuration loaded successfully");
 
-    // Initialize services
-    let weather_service = Arc::new(WeatherService::new(&config.openweathermap_api_key));
-    let forecast_service = Arc::new(ForecastService::new(&config.openweathermap_api_key));
+    // Create shared HTTP client with connection pooling
+    let http_client = create_http_client();
+    tracing::debug!("Shared HTTP client created");
 
-    // Initialize notification service
+    // Initialize services with shared client
+    let weather_service = Arc::new(WeatherService::new(
+        http_client.clone(),
+        &config.openweathermap_api_key,
+    ));
+    let forecast_service = Arc::new(ForecastService::new(
+        http_client.clone(),
+        &config.openweathermap_api_key,
+    ));
+
+    // Initialize notification service with shared client
     let notification_service = Arc::new(NotificationService::from_config(
+        http_client.clone(),
         config.notifications.ntfy.as_ref().map(|n| n.url.as_str()),
         config.notifications.ntfy.as_ref().map(|n| n.topic.as_str()),
         config
@@ -93,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create shared application state
     let state = AppState {
+        http_client,
         weather_service,
         forecast_service,
         notification_service,
@@ -147,15 +220,26 @@ async fn main() -> anyhow::Result<()> {
             "/scheduler/trigger/{city}",
             post(scheduler_handlers::trigger_forecast_by_city),
         )
+        .layer(
+            ServiceBuilder::new()
+                // Handle timeout errors
+                .layer(HandleErrorLayer::new(handle_timeout_error))
+                // Request timeout (60 seconds for slow API calls)
+                .timeout(Duration::from_secs(60)),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    // Start server
+    // Start server with graceful shutdown
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("Server listening on {}", addr);
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    tracing::info!("Server shutdown complete");
 
     Ok(())
 }

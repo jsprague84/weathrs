@@ -9,7 +9,8 @@ authors = ["jsprague84"]
 # Web framework
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower = { version = "0.5", features = ["timeout"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "timeout"] }
 
 # HTTP client for OpenWeatherMap
 reqwest = { version = "0.13", features = ["json", "query"] }

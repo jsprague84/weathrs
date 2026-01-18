@@ -5,11 +5,9 @@ use axum::{
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use thiserror::Error;
 
 const OPENWEATHERMAP_API_URL: &str = "https://api.openweathermap.org/data/2.5/weather";
-const DEFAULT_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Error, Debug)]
 pub enum WeatherError {
@@ -110,13 +108,7 @@ pub struct WeatherService {
 }
 
 impl WeatherService {
-    pub fn new(api_key: &str) -> Self {
-        // Configure client with timeout - reqwest best practice
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-            .build()
-            .expect("Failed to create HTTP client");
-
+    pub fn new(client: Client, api_key: &str) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),

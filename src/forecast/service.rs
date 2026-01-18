@@ -5,7 +5,6 @@ use axum::{
 };
 use reqwest::Client;
 use serde::Serialize;
-use std::time::Duration;
 use thiserror::Error;
 
 use super::models::*;
@@ -13,7 +12,6 @@ use super::models::*;
 const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
 const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
 const ONE_CALL_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall";
-const DEFAULT_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Error, Debug)]
 pub enum ForecastError {
@@ -62,12 +60,7 @@ pub struct ForecastService {
 }
 
 impl ForecastService {
-    pub fn new(api_key: &str) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-            .build()
-            .expect("Failed to create HTTP client");
-
+    pub fn new(client: Client, api_key: &str) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),

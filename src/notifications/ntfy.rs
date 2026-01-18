@@ -1,5 +1,4 @@
 use reqwest::Client;
-use std::time::Duration;
 
 use super::{NotificationError, NotificationMessage};
 
@@ -13,12 +12,7 @@ pub struct NtfyClient {
 }
 
 impl NtfyClient {
-    pub fn new(url: &str, topic: &str, token: Option<&str>) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to create HTTP client");
-
+    pub fn new(client: Client, url: &str, topic: &str, token: Option<&str>) -> Self {
         Self {
             client,
             url: url.trim_end_matches('/').to_string(),
@@ -67,16 +61,25 @@ impl NtfyClient {
 mod tests {
     use super::*;
 
+    fn test_client() -> Client {
+        Client::new()
+    }
+
     #[test]
     fn test_ntfy_client_creation() {
-        let client = NtfyClient::new("https://ntfy.sh", "test-topic", None);
+        let client = NtfyClient::new(test_client(), "https://ntfy.sh", "test-topic", None);
         assert_eq!(client.url, "https://ntfy.sh");
         assert_eq!(client.topic, "test-topic");
     }
 
     #[test]
     fn test_ntfy_client_with_token() {
-        let client = NtfyClient::new("https://ntfy.sh", "test-topic", Some("my-token"));
+        let client = NtfyClient::new(
+            test_client(),
+            "https://ntfy.sh",
+            "test-topic",
+            Some("my-token"),
+        );
         assert!(client.token.is_some());
     }
 }

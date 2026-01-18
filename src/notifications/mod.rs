@@ -4,6 +4,7 @@ mod ntfy;
 pub use gotify::GotifyClient;
 pub use ntfy::NtfyClient;
 
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -74,6 +75,7 @@ impl NotificationService {
     }
 
     pub fn from_config(
+        client: Client,
         ntfy_url: Option<&str>,
         ntfy_topic: Option<&str>,
         ntfy_token: Option<&str>,
@@ -81,12 +83,14 @@ impl NotificationService {
         gotify_token: Option<&str>,
     ) -> Self {
         let ntfy = match (ntfy_url, ntfy_topic) {
-            (Some(url), Some(topic)) => Some(NtfyClient::new(url, topic, ntfy_token)),
+            (Some(url), Some(topic)) => {
+                Some(NtfyClient::new(client.clone(), url, topic, ntfy_token))
+            }
             _ => None,
         };
 
         let gotify = match (gotify_url, gotify_token) {
-            (Some(url), Some(token)) => Some(GotifyClient::new(url, token)),
+            (Some(url), Some(token)) => Some(GotifyClient::new(client, url, token)),
             _ => None,
         };
 
