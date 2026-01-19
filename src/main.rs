@@ -245,10 +245,7 @@ async fn main() -> anyhow::Result<()> {
             post(scheduler_handlers::trigger_forecast_by_city),
         )
         // Device registration endpoints for push notifications
-        .route(
-            "/devices/register",
-            post(devices_handlers::register_device),
-        )
+        .route("/devices/register", post(devices_handlers::register_device))
         .route(
             "/devices/unregister",
             post(devices_handlers::unregister_device),
@@ -261,10 +258,7 @@ async fn main() -> anyhow::Result<()> {
             "/devices/test",
             post(devices_handlers::send_test_notification),
         )
-        .route(
-            "/devices/count",
-            get(devices_handlers::get_device_count),
-        )
+        .route("/devices/count", get(devices_handlers::get_device_count))
         .layer(
             ServiceBuilder::new()
                 // Handle timeout errors

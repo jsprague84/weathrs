@@ -63,6 +63,7 @@ pub struct ExpoPushTicket {
     #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub details: Option<serde_json::Value>,
 }
 
@@ -127,7 +128,9 @@ impl ExpoClient {
                 );
                 Ok(ticket)
             } else {
-                let error_msg = ticket.message.unwrap_or_else(|| "Unknown error".to_string());
+                let error_msg = ticket
+                    .message
+                    .unwrap_or_else(|| "Unknown error".to_string());
                 tracing::error!(
                     status = %ticket.status,
                     message = %error_msg,
@@ -188,9 +191,8 @@ impl ExpoClient {
                                         let error_msg = ticket
                                             .message
                                             .unwrap_or_else(|| "Unknown error".to_string());
-                                        results.push(Err(NotificationError::ServiceError(
-                                            error_msg,
-                                        )));
+                                        results
+                                            .push(Err(NotificationError::ServiceError(error_msg)));
                                     }
                                 }
                             }

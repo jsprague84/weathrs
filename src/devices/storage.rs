@@ -75,6 +75,7 @@ impl DeviceStorage {
     }
 
     /// Get a device by ID
+    #[allow(dead_code)]
     pub async fn get_by_id(&self, id: &str) -> Option<Device> {
         let devices = self.devices.read().await;
         devices.values().find(|d| d.id == id).cloned()
