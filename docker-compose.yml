@@ -4,20 +4,10 @@ services:
     container_name: weathrs
     restart: unless-stopped
     environment:
-      - WEATHRS_OPENWEATHERMAP_API_KEY=${WEATHRS_OPENWEATHERMAP_API_KEY}
-      - WEATHRS_HOST=0.0.0.0
-      - WEATHRS_PORT=3000
-      - WEATHRS_DEFAULT_CITY=${WEATHRS_DEFAULT_CITY:-London}
-      - WEATHRS_UNITS=${WEATHRS_UNITS:-metric}
       - RUST_LOG=${RUST_LOG:-weathrs=info,tower_http=info}
-      # Optional: ntfy notifications
-      - WEATHRS_NOTIFICATIONS_NTFY_URL=${WEATHRS_NOTIFICATIONS_NTFY_URL:-}
-      - WEATHRS_NOTIFICATIONS_NTFY_TOPIC=${WEATHRS_NOTIFICATIONS_NTFY_TOPIC:-}
-      - WEATHRS_NOTIFICATIONS_NTFY_TOKEN=${WEATHRS_NOTIFICATIONS_NTFY_TOKEN:-}
-      # Optional: gotify notifications
-      - WEATHRS_NOTIFICATIONS_GOTIFY_URL=${WEATHRS_NOTIFICATIONS_GOTIFY_URL:-}
-      - WEATHRS_NOTIFICATIONS_GOTIFY_TOKEN=${WEATHRS_NOTIFICATIONS_GOTIFY_TOKEN:-}
     volumes:
+      # Configuration file
+      - ./config.toml:/app/config.toml:ro
       # Persist device registrations
       - weathrs-data:/app/data
     healthcheck:
