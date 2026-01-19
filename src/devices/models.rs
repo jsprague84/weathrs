@@ -56,6 +56,7 @@ fn default_true() -> bool {
 
 /// Request to register a new device
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceRegistrationRequest {
     pub token: String,
     pub platform: Platform,
@@ -92,6 +93,7 @@ pub struct TestNotificationRequest {
 
 /// Response for device operations
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceResponse {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
