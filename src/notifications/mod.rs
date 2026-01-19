@@ -1,6 +1,8 @@
+mod expo;
 mod gotify;
 mod ntfy;
 
+pub use expo::ExpoClient;
 pub use gotify::GotifyClient;
 pub use ntfy::{NtfyAuth, NtfyClient};
 

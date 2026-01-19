@@ -1,12 +1,13 @@
 mod config;
+mod devices;
 mod forecast;
 mod notifications;
 mod scheduler;
 mod weather;
 
 use axum::{
-    error_handling::HandleErrorLayer, http::StatusCode, routing::get, routing::post, BoxError,
-    Router,
+    error_handling::HandleErrorLayer, http::StatusCode, routing::get, routing::post, routing::put,
+    BoxError, Router,
 };
 use reqwest::Client;
 use std::{sync::Arc, time::Duration};
@@ -15,6 +16,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::AppConfig;
+use crate::devices::{handlers as devices_handlers, DevicesService};
 use crate::forecast::{handlers as forecast_handlers, ForecastService};
 use crate::notifications::{NotificationService, NotificationServiceConfig};
 use crate::scheduler::{handlers as scheduler_handlers, JobConfig, SchedulerService};
@@ -32,6 +34,7 @@ pub struct AppState {
     pub forecast_service: Arc<ForecastService>,
     pub notification_service: Arc<NotificationService>,
     pub scheduler_service: Arc<SchedulerService>,
+    pub devices_service: Arc<DevicesService>,
     pub config: Arc<AppConfig>,
 }
 
@@ -175,6 +178,14 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Scheduler started (no jobs configured)");
     }
 
+    // Initialize devices service for push notifications
+    let devices_service = Arc::new(DevicesService::new(
+        http_client.clone(),
+        "data/devices.json",
+    ));
+    devices_service.init().await?;
+    tracing::info!("Devices service initialized");
+
     // Create shared application state
     let state = AppState {
         http_client,
@@ -182,6 +193,7 @@ async fn main() -> anyhow::Result<()> {
         forecast_service,
         notification_service,
         scheduler_service,
+        devices_service,
         config: Arc::new(config.clone()),
     };
 
@@ -231,6 +243,27 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/scheduler/trigger/{city}",
             post(scheduler_handlers::trigger_forecast_by_city),
+        )
+        // Device registration endpoints for push notifications
+        .route(
+            "/devices/register",
+            post(devices_handlers::register_device),
+        )
+        .route(
+            "/devices/unregister",
+            post(devices_handlers::unregister_device),
+        )
+        .route(
+            "/devices/settings",
+            put(devices_handlers::update_device_settings),
+        )
+        .route(
+            "/devices/test",
+            post(devices_handlers::send_test_notification),
+        )
+        .route(
+            "/devices/count",
+            get(devices_handlers::get_device_count),
         )
         .layer(
             ServiceBuilder::new()
