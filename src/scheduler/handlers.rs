@@ -5,8 +5,9 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use super::jobs::ForecastJob;
+use super::jobs::{ForecastJob, NotifyConfig};
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -30,6 +31,68 @@ pub struct TriggerResponse {
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
+}
+
+/// Request to create a new job
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateJobRequest {
+    pub name: String,
+    pub city: String,
+    #[serde(default = "default_units")]
+    pub units: String,
+    pub cron: String,
+    #[serde(default = "default_true")]
+    pub include_daily: bool,
+    #[serde(default)]
+    pub include_hourly: bool,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub notify: Option<NotifyConfigRequest>,
+}
+
+/// Request to update a job
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateJobRequest {
+    pub name: Option<String>,
+    pub city: Option<String>,
+    pub units: Option<String>,
+    pub cron: Option<String>,
+    pub include_daily: Option<bool>,
+    pub include_hourly: Option<bool>,
+    pub enabled: Option<bool>,
+    pub notify: Option<NotifyConfigRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotifyConfigRequest {
+    pub on_run: Option<bool>,
+    pub on_alert: Option<bool>,
+    pub on_precipitation: Option<bool>,
+    pub cold_threshold: Option<f64>,
+    pub heat_threshold: Option<f64>,
+}
+
+fn default_units() -> String {
+    "metric".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Response for job operations
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job: Option<ForecastJob>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// List all scheduled jobs
@@ -110,4 +173,198 @@ pub struct SchedulerStatus {
     pub running: bool,
     pub job_count: usize,
     pub notifications_configured: bool,
+}
+
+/// Create a new scheduled job
+/// POST /scheduler/jobs
+pub async fn create_job(
+    State(state): State<AppState>,
+    Json(request): Json<CreateJobRequest>,
+) -> impl IntoResponse {
+    let notify_config = request
+        .notify
+        .map(|n| NotifyConfig {
+            on_run: n.on_run.unwrap_or(true),
+            on_alert: n.on_alert.unwrap_or(true),
+            on_precipitation: n.on_precipitation.unwrap_or(false),
+            cold_threshold: n.cold_threshold,
+            heat_threshold: n.heat_threshold,
+        })
+        .unwrap_or_default();
+
+    let job = ForecastJob {
+        id: Uuid::new_v4().to_string(),
+        name: request.name,
+        city: request.city,
+        units: request.units,
+        cron: request.cron,
+        include_daily: request.include_daily,
+        include_hourly: request.include_hourly,
+        enabled: request.enabled,
+        notify: notify_config,
+    };
+
+    match state.scheduler_service.create_job(job).await {
+        Ok(created) => (
+            StatusCode::CREATED,
+            Json(JobResponse {
+                success: true,
+                job: Some(created),
+                message: None,
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to create job");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(JobResponse {
+                    success: false,
+                    job: None,
+                    message: Some(e.to_string()),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Get a job by ID
+/// GET /scheduler/jobs/{id}
+pub async fn get_job(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    match state.scheduler_service.get_job(&id).await {
+        Some(job) => (
+            StatusCode::OK,
+            Json(JobResponse {
+                success: true,
+                job: Some(job),
+                message: None,
+            }),
+        )
+            .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(JobResponse {
+                success: false,
+                job: None,
+                message: Some(format!("Job not found: {}", id)),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+/// Update a job
+/// PUT /scheduler/jobs/{id}
+pub async fn update_job(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<UpdateJobRequest>,
+) -> impl IntoResponse {
+    // Get existing job first
+    let existing = match state.scheduler_service.get_job(&id).await {
+        Some(job) => job,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(JobResponse {
+                    success: false,
+                    job: None,
+                    message: Some(format!("Job not found: {}", id)),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Merge updates
+    let notify_config = if let Some(n) = request.notify {
+        NotifyConfig {
+            on_run: n.on_run.unwrap_or(existing.notify.on_run),
+            on_alert: n.on_alert.unwrap_or(existing.notify.on_alert),
+            on_precipitation: n
+                .on_precipitation
+                .unwrap_or(existing.notify.on_precipitation),
+            cold_threshold: n.cold_threshold.or(existing.notify.cold_threshold),
+            heat_threshold: n.heat_threshold.or(existing.notify.heat_threshold),
+        }
+    } else {
+        existing.notify.clone()
+    };
+
+    let updated_job = ForecastJob {
+        id: existing.id,
+        name: request.name.unwrap_or(existing.name),
+        city: request.city.unwrap_or(existing.city),
+        units: request.units.unwrap_or(existing.units),
+        cron: request.cron.unwrap_or(existing.cron),
+        include_daily: request.include_daily.unwrap_or(existing.include_daily),
+        include_hourly: request.include_hourly.unwrap_or(existing.include_hourly),
+        enabled: request.enabled.unwrap_or(existing.enabled),
+        notify: notify_config,
+    };
+
+    match state.scheduler_service.update_job(updated_job).await {
+        Ok(job) => (
+            StatusCode::OK,
+            Json(JobResponse {
+                success: true,
+                job: Some(job),
+                message: None,
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to update job");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(JobResponse {
+                    success: false,
+                    job: None,
+                    message: Some(e.to_string()),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Delete a job
+/// DELETE /scheduler/jobs/{id}
+pub async fn delete_job(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.scheduler_service.delete_job(&id).await {
+        Ok(true) => (
+            StatusCode::OK,
+            Json(JobResponse {
+                success: true,
+                job: None,
+                message: Some("Job deleted".to_string()),
+            }),
+        )
+            .into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(JobResponse {
+                success: false,
+                job: None,
+                message: Some(format!("Job not found: {}", id)),
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to delete job");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(JobResponse {
+                    success: false,
+                    job: None,
+                    message: Some(e.to_string()),
+                }),
+            )
+                .into_response()
+        }
+    }
 }

@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 /// Configuration for a scheduled forecast job
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ForecastJob {
     /// Unique job identifier
     pub id: String,
@@ -30,6 +31,7 @@ pub struct ForecastJob {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct NotifyConfig {
     /// Send notification on every run
     #[serde(default = "default_true")]

@@ -1,34 +1,78 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
+use uuid::Uuid;
 
 use crate::forecast::ForecastService;
 use crate::notifications::{NotificationMessage, NotificationService, Priority};
 
 use super::jobs::{ForecastJob, JobConfig};
+use super::storage::JobStorage;
+
+#[derive(Error, Debug)]
+pub enum SchedulerError {
+    #[error("Job not found: {0}")]
+    NotFound(String),
+
+    #[error("Invalid cron expression: {0}")]
+    InvalidCron(String),
+
+    #[error("Storage error: {0}")]
+    Storage(#[from] std::io::Error),
+
+    #[error("Scheduler error: {0}")]
+    Scheduler(String),
+}
 
 /// Service for managing scheduled forecast jobs
 pub struct SchedulerService {
     scheduler: JobScheduler,
     forecast_service: Arc<ForecastService>,
     notification_service: Arc<NotificationService>,
-    jobs: Arc<RwLock<Vec<ForecastJob>>>,
+    /// Maps our job IDs to scheduler's internal UUIDs
+    job_uuids: Arc<RwLock<HashMap<String, Uuid>>>,
+    /// Persistent storage for jobs
+    storage: JobStorage,
 }
 
 impl SchedulerService {
     pub async fn new(
         forecast_service: Arc<ForecastService>,
         notification_service: Arc<NotificationService>,
+        storage_path: &str,
     ) -> Result<Self> {
         let scheduler = JobScheduler::new().await?;
+        let storage = JobStorage::new(storage_path);
 
         Ok(Self {
             scheduler,
             forecast_service,
             notification_service,
-            jobs: Arc::new(RwLock::new(Vec::new())),
+            job_uuids: Arc::new(RwLock::new(HashMap::new())),
+            storage,
         })
+    }
+
+    /// Initialize storage and load persisted jobs
+    pub async fn init(&self) -> Result<(), SchedulerError> {
+        self.storage.load().await?;
+
+        // Load all enabled jobs from storage
+        let jobs = self.storage.get_enabled().await;
+        for job in jobs {
+            if let Err(e) = self.schedule_job(&job).await {
+                tracing::error!(job_id = %job.id, error = %e, "Failed to schedule job from storage");
+            }
+        }
+
+        tracing::info!(
+            count = self.storage.count().await,
+            "Scheduler initialized with stored jobs"
+        );
+        Ok(())
     }
 
     /// Start the scheduler
@@ -38,18 +82,21 @@ impl SchedulerService {
         Ok(())
     }
 
-    /// Load jobs from configuration
+    /// Load jobs from configuration file (merges with stored jobs)
     pub async fn load_jobs(&self, config: &JobConfig) -> Result<()> {
         for job in &config.jobs {
-            if job.enabled {
-                self.add_job(job.clone()).await?;
+            // Only add if not already in storage
+            if !self.storage.exists(&job.id).await {
+                if let Err(e) = self.create_job(job.clone()).await {
+                    tracing::error!(job_id = %job.id, error = %e, "Failed to load job from config");
+                }
             }
         }
         Ok(())
     }
 
-    /// Add a forecast job to the scheduler
-    pub async fn add_job(&self, job_config: ForecastJob) -> Result<()> {
+    /// Schedule a job in the cron scheduler (internal)
+    async fn schedule_job(&self, job_config: &ForecastJob) -> Result<Uuid, SchedulerError> {
         let job_id = job_config.id.clone();
         let job_name = job_config.name.clone();
         let city = job_config.city.clone();
@@ -65,7 +112,7 @@ impl SchedulerService {
             job_name = %job_name,
             city = %city,
             cron = %job_config.cron,
-            "Adding scheduled forecast job"
+            "Scheduling forecast job"
         );
 
         let cron_job = Job::new_async(job_config.cron.as_str(), move |_uuid, _lock| {
@@ -120,19 +167,109 @@ impl SchedulerService {
                     }
                 }
             })
-        })?;
+        })
+        .map_err(|e| SchedulerError::InvalidCron(e.to_string()))?;
 
-        self.scheduler.add(cron_job).await?;
+        let uuid = self
+            .scheduler
+            .add(cron_job)
+            .await
+            .map_err(|e| SchedulerError::Scheduler(e.to_string()))?;
 
-        // Store job config
-        self.jobs.write().await.push(job_config);
+        // Store mapping
+        self.job_uuids.write().await.insert(job_id, uuid);
+
+        Ok(uuid)
+    }
+
+    /// Unschedule a job from the cron scheduler (internal)
+    async fn unschedule_job(&self, job_id: &str) -> Result<(), SchedulerError> {
+        let uuid = {
+            let uuids = self.job_uuids.read().await;
+            uuids.get(job_id).copied()
+        };
+
+        if let Some(uuid) = uuid {
+            self.scheduler
+                .remove(&uuid)
+                .await
+                .map_err(|e| SchedulerError::Scheduler(e.to_string()))?;
+            self.job_uuids.write().await.remove(job_id);
+            tracing::info!(job_id = %job_id, "Unscheduled job");
+        }
 
         Ok(())
     }
 
+    /// Create a new job
+    pub async fn create_job(&self, job: ForecastJob) -> Result<ForecastJob, SchedulerError> {
+        // Validate cron expression by trying to parse it
+        if Job::new_async(job.cron.as_str(), |_, _| Box::pin(async {})).is_err() {
+            return Err(SchedulerError::InvalidCron(job.cron.clone()));
+        }
+
+        // Save to storage
+        self.storage.upsert(job.clone()).await?;
+
+        // Schedule if enabled
+        if job.enabled {
+            self.schedule_job(&job).await?;
+        }
+
+        tracing::info!(job_id = %job.id, name = %job.name, "Created new job");
+        Ok(job)
+    }
+
+    /// Update an existing job
+    pub async fn update_job(&self, job: ForecastJob) -> Result<ForecastJob, SchedulerError> {
+        // Check if job exists
+        if !self.storage.exists(&job.id).await {
+            return Err(SchedulerError::NotFound(job.id.clone()));
+        }
+
+        // Validate cron expression
+        if Job::new_async(job.cron.as_str(), |_, _| Box::pin(async {})).is_err() {
+            return Err(SchedulerError::InvalidCron(job.cron.clone()));
+        }
+
+        // Unschedule old job
+        self.unschedule_job(&job.id).await?;
+
+        // Save updated job
+        self.storage.upsert(job.clone()).await?;
+
+        // Reschedule if enabled
+        if job.enabled {
+            self.schedule_job(&job).await?;
+        }
+
+        tracing::info!(job_id = %job.id, name = %job.name, "Updated job");
+        Ok(job)
+    }
+
+    /// Delete a job
+    pub async fn delete_job(&self, job_id: &str) -> Result<bool, SchedulerError> {
+        // Unschedule first
+        self.unschedule_job(job_id).await?;
+
+        // Remove from storage
+        let removed = self.storage.remove(job_id).await?;
+
+        if removed {
+            tracing::info!(job_id = %job_id, "Deleted job");
+        }
+
+        Ok(removed)
+    }
+
+    /// Get a job by ID
+    pub async fn get_job(&self, job_id: &str) -> Option<ForecastJob> {
+        self.storage.get(job_id).await
+    }
+
     /// Get all configured jobs
     pub async fn get_jobs(&self) -> Vec<ForecastJob> {
-        self.jobs.read().await.clone()
+        self.storage.get_all().await
     }
 
     /// Run a job immediately (manual trigger)

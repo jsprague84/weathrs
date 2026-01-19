@@ -153,30 +153,33 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("No notification services configured");
     }
 
-    // Initialize scheduler
+    // Initialize scheduler with persistent storage
     let scheduler_service = Arc::new(
         SchedulerService::new(
             Arc::clone(&forecast_service),
             Arc::clone(&notification_service),
+            "data/scheduler_jobs.json",
         )
         .await?,
     );
 
-    // Load scheduled jobs from config
+    // Initialize scheduler storage and load persisted jobs
+    scheduler_service.init().await?;
+
+    // Load jobs from config file (if any, and if not already in storage)
     if config.scheduler.enabled && !config.scheduler.jobs.is_empty() {
         let job_config = JobConfig {
             jobs: config.scheduler.jobs.clone(),
         };
         scheduler_service.load_jobs(&job_config).await?;
-        scheduler_service.start().await?;
-        tracing::info!(
-            job_count = config.scheduler.jobs.len(),
-            "Scheduler started with jobs"
-        );
-    } else {
-        scheduler_service.start().await?;
-        tracing::info!("Scheduler started (no jobs configured)");
     }
+
+    // Start the scheduler
+    scheduler_service.start().await?;
+    tracing::info!(
+        job_count = scheduler_service.get_jobs().await.len(),
+        "Scheduler started"
+    );
 
     // Initialize devices service for push notifications
     let devices_service = Arc::new(DevicesService::new(
@@ -235,7 +238,16 @@ async fn main() -> anyhow::Result<()> {
             "/scheduler/status",
             get(scheduler_handlers::scheduler_status),
         )
-        .route("/scheduler/jobs", get(scheduler_handlers::list_jobs))
+        .route(
+            "/scheduler/jobs",
+            get(scheduler_handlers::list_jobs).post(scheduler_handlers::create_job),
+        )
+        .route(
+            "/scheduler/jobs/{id}",
+            get(scheduler_handlers::get_job)
+                .put(scheduler_handlers::update_job)
+                .delete(scheduler_handlers::delete_job),
+        )
         .route(
             "/scheduler/trigger",
             post(scheduler_handlers::trigger_forecast),
