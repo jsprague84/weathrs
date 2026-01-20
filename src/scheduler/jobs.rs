@@ -14,8 +14,11 @@ pub struct ForecastJob {
     /// Units (metric, imperial, standard)
     #[serde(default = "default_units")]
     pub units: String,
-    /// Cron expression (e.g., "0 6 * * *" for 6am daily)
+    /// Cron expression (e.g., "0 30 5 * * *" for 5:30am daily)
     pub cron: String,
+    /// IANA timezone (e.g., "America/Chicago"). Defaults to UTC if not specified.
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
     /// Whether to include daily forecast
     #[serde(default = "default_true")]
     pub include_daily: bool,
@@ -52,6 +55,10 @@ fn default_units() -> String {
     "metric".to_string()
 }
 
+fn default_timezone() -> String {
+    "UTC".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -64,11 +71,17 @@ impl ForecastJob {
             city: city.to_string(),
             units: default_units(),
             cron: cron.to_string(),
+            timezone: default_timezone(),
             include_daily: true,
             include_hourly: false,
             enabled: true,
             notify: NotifyConfig::default(),
         }
+    }
+
+    pub fn with_timezone(mut self, timezone: &str) -> Self {
+        self.timezone = timezone.to_string();
+        self
     }
 }
 

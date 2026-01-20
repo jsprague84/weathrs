@@ -24,6 +24,7 @@ config = { version = "0.14", features = ["convert-case"] }
 
 # Scheduling
 tokio-cron-scheduler = "0.15"
+chrono-tz = "0.10"
 
 # Logging/tracing
 tracing = "0.1"

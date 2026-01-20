@@ -44,6 +44,9 @@ pub struct CreateJobRequest {
     #[serde(default = "default_units")]
     pub units: String,
     pub cron: String,
+    /// IANA timezone (e.g., "America/Chicago"). Defaults to UTC.
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
     #[serde(default = "default_true")]
     pub include_daily: bool,
     #[serde(default)]
@@ -62,6 +65,8 @@ pub struct UpdateJobRequest {
     pub city: Option<String>,
     pub units: Option<String>,
     pub cron: Option<String>,
+    /// IANA timezone (e.g., "America/Chicago")
+    pub timezone: Option<String>,
     pub include_daily: Option<bool>,
     pub include_hourly: Option<bool>,
     pub enabled: Option<bool>,
@@ -80,6 +85,10 @@ pub struct NotifyConfigRequest {
 
 fn default_units() -> String {
     "metric".to_string()
+}
+
+fn default_timezone() -> String {
+    "UTC".to_string()
 }
 
 fn default_true() -> bool {
@@ -240,6 +249,7 @@ pub async fn create_job(
         city: request.city,
         units: request.units,
         cron: request.cron,
+        timezone: request.timezone,
         include_daily: request.include_daily,
         include_hourly: request.include_hourly,
         enabled: request.enabled,
@@ -340,6 +350,7 @@ pub async fn update_job(
         city: request.city.unwrap_or(existing.city),
         units: request.units.unwrap_or(existing.units),
         cron: request.cron.unwrap_or(existing.cron),
+        timezone: request.timezone.unwrap_or(existing.timezone),
         include_daily: request.include_daily.unwrap_or(existing.include_daily),
         include_hourly: request.include_hourly.unwrap_or(existing.include_hourly),
         enabled: request.enabled.unwrap_or(existing.enabled),
