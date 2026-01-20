@@ -127,7 +127,11 @@ pub async fn trigger_forecast(
     }
 
     // Also send Expo push notifications to registered devices
-    if let Ok(forecast) = state.forecast_service.get_daily_forecast(&request.city, &units).await {
+    if let Ok(forecast) = state
+        .forecast_service
+        .get_daily_forecast(&request.city, &units)
+        .await
+    {
         let message = build_push_message(&forecast);
         match state.devices_service.broadcast(&message).await {
             Ok(count) => {
@@ -169,7 +173,11 @@ pub async fn trigger_forecast_by_city(
     }
 
     // Also send Expo push notifications to registered devices
-    if let Ok(forecast) = state.forecast_service.get_daily_forecast(&city, units).await {
+    if let Ok(forecast) = state
+        .forecast_service
+        .get_daily_forecast(&city, units)
+        .await
+    {
         let message = build_push_message(&forecast);
         match state.devices_service.broadcast(&message).await {
             Ok(count) => {
