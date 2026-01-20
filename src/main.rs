@@ -272,6 +272,7 @@ async fn main() -> anyhow::Result<()> {
             post(devices_handlers::send_test_notification),
         )
         .route("/devices/count", get(devices_handlers::get_device_count))
+        .route("/devices/debug", get(devices_handlers::list_devices))
         .layer(
             ServiceBuilder::new()
                 // Handle timeout errors

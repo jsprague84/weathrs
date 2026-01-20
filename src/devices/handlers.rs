@@ -111,3 +111,27 @@ pub async fn get_device_count(State(state): State<AppState>) -> impl IntoRespons
         "count": count
     }))
 }
+
+/// GET /devices/debug - List all devices (for debugging)
+pub async fn list_devices(State(state): State<AppState>) -> impl IntoResponse {
+    let devices = state.devices_service.get_all().await;
+    let debug_info: Vec<serde_json::Value> = devices
+        .iter()
+        .map(|d| {
+            json!({
+                "id": d.id,
+                "platform": d.platform,
+                "device_name": d.device_name,
+                "enabled": d.enabled,
+                "cities": d.cities,
+                "token_preview": format!("{}...{}", &d.token[..20.min(d.token.len())], &d.token[d.token.len().saturating_sub(10)..]),
+                "registered_at": d.registered_at,
+                "updated_at": d.updated_at,
+            })
+        })
+        .collect();
+    Json(json!({
+        "count": devices.len(),
+        "devices": debug_info
+    }))
+}
