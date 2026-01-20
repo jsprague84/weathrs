@@ -153,6 +153,12 @@ impl ExpoClient {
     ) -> Vec<Result<ExpoPushTicket, NotificationError>> {
         let mut results = Vec::with_capacity(tokens.len());
 
+        tracing::info!(
+            token_count = tokens.len(),
+            title = %message.title,
+            "Starting batch push to Expo"
+        );
+
         // Expo recommends batching up to 100 notifications
         for chunk in tokens.chunks(100) {
             let messages: Vec<ExpoPushMessage> = chunk
@@ -170,6 +176,11 @@ impl ExpoClient {
                 })
                 .collect();
 
+            tracing::debug!(
+                chunk_size = chunk.len(),
+                "Sending chunk to Expo API"
+            );
+
             match self
                 .client
                 .post(EXPO_PUSH_URL)
@@ -181,22 +192,35 @@ impl ExpoClient {
                 .await
             {
                 Ok(response) => {
-                    if response.status().is_success() {
-                        match response.json::<ExpoPushResponse>().await {
+                    let status = response.status();
+                    tracing::debug!(status = %status, "Expo API response status");
+
+                    if status.is_success() {
+                        let body = response.text().await.unwrap_or_default();
+                        tracing::debug!(body = %body, "Expo API response body");
+
+                        match serde_json::from_str::<ExpoPushResponse>(&body) {
                             Ok(push_response) => {
                                 for ticket in push_response.data {
                                     if ticket.status == "ok" {
+                                        tracing::debug!(ticket_id = ?ticket.id, "Push ticket OK");
                                         results.push(Ok(ticket));
                                     } else {
                                         let error_msg = ticket
                                             .message
                                             .unwrap_or_else(|| "Unknown error".to_string());
+                                        tracing::error!(
+                                            status = %ticket.status,
+                                            error = %error_msg,
+                                            "Push ticket failed"
+                                        );
                                         results
                                             .push(Err(NotificationError::ServiceError(error_msg)));
                                     }
                                 }
                             }
                             Err(e) => {
+                                tracing::error!(error = %e, body = %body, "Failed to parse Expo response");
                                 let error_msg = e.to_string();
                                 for _ in chunk {
                                     results.push(Err(NotificationError::ServiceError(
@@ -206,22 +230,22 @@ impl ExpoClient {
                             }
                         }
                     } else {
-                        let status = response.status();
                         let body = response.text().await.unwrap_or_default();
-                        let error = NotificationError::ServiceError(format!(
-                            "Expo API returned {}: {}",
-                            status, body
-                        ));
+                        tracing::error!(
+                            status = %status,
+                            body = %body,
+                            "Expo API returned error"
+                        );
                         for _ in chunk {
                             results.push(Err(NotificationError::ServiceError(format!(
                                 "Expo API returned {}: {}",
                                 status, body
                             ))));
                         }
-                        tracing::error!(%error, "Batch push failed");
                     }
                 }
                 Err(e) => {
+                    tracing::error!(error = %e, "Failed to send request to Expo API");
                     let error_msg = e.to_string();
                     for _ in chunk {
                         results.push(Err(NotificationError::ServiceError(error_msg.clone())));
@@ -231,10 +255,12 @@ impl ExpoClient {
         }
 
         let success_count = results.iter().filter(|r| r.is_ok()).count();
+        let error_count = results.iter().filter(|r| r.is_err()).count();
         tracing::info!(
             total = tokens.len(),
             success = success_count,
-            "Sent batch push notifications"
+            errors = error_count,
+            "Completed batch push notifications"
         );
 
         results
