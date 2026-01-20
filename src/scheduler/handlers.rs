@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::jobs::{ForecastJob, NotifyConfig};
+use crate::forecast::models::ForecastResponse;
+use crate::notifications::{NotificationMessage, Priority};
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -112,23 +114,39 @@ pub async fn trigger_forecast(
     Json(request): Json<TriggerRequest>,
 ) -> impl IntoResponse {
     let units = request.units.unwrap_or_else(|| state.config.units.clone());
-    match state.scheduler_service.run_now(&request.city, &units).await {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(TriggerResponse {
-                status: "success".to_string(),
-                message: format!("Forecast triggered for {}", request.city),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
+
+    // Send to ntfy/gotify via scheduler service
+    if let Err(e) = state.scheduler_service.run_now(&request.city, &units).await {
+        return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: e.to_string(),
             }),
         )
-            .into_response(),
+            .into_response();
     }
+
+    // Also send Expo push notifications to registered devices
+    if let Ok(forecast) = state.forecast_service.get_daily_forecast(&request.city, &units).await {
+        let message = build_push_message(&forecast);
+        match state.devices_service.broadcast(&message).await {
+            Ok(count) => {
+                tracing::info!(count = count, "Sent Expo push notifications");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to send Expo push notifications");
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(TriggerResponse {
+            status: "success".to_string(),
+            message: format!("Forecast triggered for {}", request.city),
+        }),
+    )
+        .into_response()
 }
 
 /// Trigger forecast for a specific city via path
@@ -138,23 +156,39 @@ pub async fn trigger_forecast_by_city(
     Path(city): Path<String>,
 ) -> impl IntoResponse {
     let units = &state.config.units;
-    match state.scheduler_service.run_now(&city, units).await {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(TriggerResponse {
-                status: "success".to_string(),
-                message: format!("Forecast triggered for {}", city),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
+
+    // Send to ntfy/gotify via scheduler service
+    if let Err(e) = state.scheduler_service.run_now(&city, units).await {
+        return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: e.to_string(),
             }),
         )
-            .into_response(),
+            .into_response();
     }
+
+    // Also send Expo push notifications to registered devices
+    if let Ok(forecast) = state.forecast_service.get_daily_forecast(&city, units).await {
+        let message = build_push_message(&forecast);
+        match state.devices_service.broadcast(&message).await {
+            Ok(count) => {
+                tracing::info!(count = count, "Sent Expo push notifications");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to send Expo push notifications");
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(TriggerResponse {
+            status: "success".to_string(),
+            message: format!("Forecast triggered for {}", city),
+        }),
+    )
+        .into_response()
 }
 
 /// Get scheduler status
@@ -366,5 +400,60 @@ pub async fn delete_job(
             )
                 .into_response()
         }
+    }
+}
+
+/// Build a notification message for Expo push from forecast data
+fn build_push_message(forecast: &ForecastResponse) -> NotificationMessage {
+    let city = &forecast.location.city;
+    let country = &forecast.location.country;
+
+    let mut body = String::new();
+
+    if let Some(ref current) = forecast.current {
+        body.push_str(&format!(
+            "🌡️ Now: {:.1}° (feels {:.1}°)\n",
+            current.temperature, current.feels_like
+        ));
+        body.push_str(&format!("☁️ {}\n", current.description));
+    }
+
+    if let Some(today) = forecast.daily.first() {
+        body.push_str(&format!(
+            "📊 Today: {:.0}° - {:.0}°\n",
+            today.temp_min, today.temp_max
+        ));
+        if today.precipitation_probability > 0.0 {
+            body.push_str(&format!(
+                "🌧️ Rain: {:.0}% chance\n",
+                today.precipitation_probability * 100.0
+            ));
+        }
+        if let Some(ref summary) = today.summary {
+            body.push_str(&format!("📝 {}", summary));
+        }
+    }
+
+    let priority = if !forecast.alerts.is_empty() {
+        body.push_str("\n\n⚠️ WEATHER ALERTS:\n");
+        for alert in &forecast.alerts {
+            body.push_str(&format!("• {}\n", alert.event));
+        }
+        Priority::Urgent
+    } else {
+        Priority::Default
+    };
+
+    let tags = if !forecast.alerts.is_empty() {
+        vec!["warning".to_string(), "weather".to_string()]
+    } else {
+        vec!["sunny".to_string(), "weather".to_string()]
+    };
+
+    NotificationMessage {
+        title: format!("🌤️ Weather: {}, {}", city, country),
+        body,
+        priority,
+        tags,
     }
 }
