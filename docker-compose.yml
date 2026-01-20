@@ -11,7 +11,7 @@ services:
       # Persist device registrations
       - weathrs-data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3030/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -28,7 +28,7 @@ services:
       - "traefik.http.routers.weathrs-secure.tls.certresolver=cloudflare"
 
       - "traefik.http.routers.weathrs-secure.service=weathrs"
-      - "traefik.http.services.weathrs.loadbalancer.server.port=3000"
+      - "traefik.http.services.weathrs.loadbalancer.server.port=3030"
 
 networks:
   proxy:

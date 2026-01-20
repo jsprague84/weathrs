@@ -24,8 +24,8 @@ RUN touch src/main.rs && cargo build --release
 # Runtime stage - minimal Alpine image (~6MB)
 FROM alpine:3.21
 
-# Only ca-certificates needed for HTTPS
-RUN apk add --no-cache ca-certificates
+# ca-certificates for HTTPS, wget for healthcheck
+RUN apk add --no-cache ca-certificates wget
 
 WORKDIR /app
 
@@ -39,7 +39,7 @@ COPY config.example.toml /app/config.example.toml
 RUN adduser -D -H -s /sbin/nologin weathrs && chown -R weathrs:weathrs /app
 USER weathrs
 
-EXPOSE 3000
+EXPOSE 3030
 
 ENV RUST_LOG=weathrs=info,tower_http=info
 
