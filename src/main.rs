@@ -153,11 +153,20 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("No notification services configured");
     }
 
+    // Initialize devices service for push notifications (before scheduler so it can use it)
+    let devices_service = Arc::new(DevicesService::new(
+        http_client.clone(),
+        "data/devices.json",
+    ));
+    devices_service.init().await?;
+    tracing::info!("Devices service initialized");
+
     // Initialize scheduler with persistent storage
     let scheduler_service = Arc::new(
         SchedulerService::new(
             Arc::clone(&forecast_service),
             Arc::clone(&notification_service),
+            Arc::clone(&devices_service),
             "data/scheduler_jobs.json",
         )
         .await?,
@@ -180,14 +189,6 @@ async fn main() -> anyhow::Result<()> {
         job_count = scheduler_service.get_jobs().await.len(),
         "Scheduler started"
     );
-
-    // Initialize devices service for push notifications
-    let devices_service = Arc::new(DevicesService::new(
-        http_client.clone(),
-        "data/devices.json",
-    ));
-    devices_service.init().await?;
-    tracing::info!("Devices service initialized");
 
     // Create shared application state
     let state = AppState {

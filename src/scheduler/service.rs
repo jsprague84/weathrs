@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
+use crate::devices::DevicesService;
 use crate::forecast::ForecastService;
 use crate::notifications::{NotificationMessage, NotificationService, Priority};
 
@@ -32,6 +33,7 @@ pub struct SchedulerService {
     scheduler: JobScheduler,
     forecast_service: Arc<ForecastService>,
     notification_service: Arc<NotificationService>,
+    devices_service: Arc<DevicesService>,
     /// Maps our job IDs to scheduler's internal UUIDs
     job_uuids: Arc<RwLock<HashMap<String, Uuid>>>,
     /// Persistent storage for jobs
@@ -42,6 +44,7 @@ impl SchedulerService {
     pub async fn new(
         forecast_service: Arc<ForecastService>,
         notification_service: Arc<NotificationService>,
+        devices_service: Arc<DevicesService>,
         storage_path: &str,
     ) -> Result<Self> {
         let scheduler = JobScheduler::new().await?;
@@ -51,6 +54,7 @@ impl SchedulerService {
             scheduler,
             forecast_service,
             notification_service,
+            devices_service,
             job_uuids: Arc::new(RwLock::new(HashMap::new())),
             storage,
         })
@@ -106,6 +110,7 @@ impl SchedulerService {
 
         let forecast_service = Arc::clone(&self.forecast_service);
         let notification_service = Arc::clone(&self.notification_service);
+        let devices_service = Arc::clone(&self.devices_service);
 
         tracing::info!(
             job_id = %job_id,
@@ -122,6 +127,7 @@ impl SchedulerService {
             let notify_config = notify_config.clone();
             let forecast_service = Arc::clone(&forecast_service);
             let notification_service = Arc::clone(&notification_service);
+            let devices_service = Arc::clone(&devices_service);
 
             Box::pin(async move {
                 tracing::info!(job = %job_name, city = %city, "Running scheduled forecast job");
@@ -144,10 +150,24 @@ impl SchedulerService {
                         // Check if we should send notification
                         let should_notify = should_notify_for_forecast(&forecast, &notify_config);
 
-                        if should_notify && notification_service.is_configured() {
+                        if should_notify {
                             let message = build_notification_message(&forecast, &notify_config);
-                            if let Err(e) = notification_service.send(&message).await {
-                                tracing::error!(error = %e, "Failed to send notification");
+
+                            // Send to ntfy/gotify
+                            if notification_service.is_configured() {
+                                if let Err(e) = notification_service.send(&message).await {
+                                    tracing::error!(error = %e, "Failed to send ntfy/gotify notification");
+                                }
+                            }
+
+                            // Send to Expo push (all registered devices)
+                            match devices_service.broadcast(&message).await {
+                                Ok(count) => {
+                                    tracing::info!(count = count, "Sent Expo push notifications");
+                                }
+                                Err(e) => {
+                                    tracing::error!(error = %e, "Failed to send Expo push notifications");
+                                }
                             }
                         }
                     }
@@ -155,15 +175,19 @@ impl SchedulerService {
                         tracing::error!(job = %job_name, error = %e, "Failed to fetch forecast");
 
                         // Notify on error if configured
+                        let message = NotificationMessage {
+                            title: format!("⚠️ Weather Alert: {} Failed", job_name),
+                            body: format!("Failed to fetch forecast for {}: {}", city, e),
+                            priority: Priority::High,
+                            tags: vec!["warning".to_string()],
+                        };
+
                         if notification_service.is_configured() {
-                            let message = NotificationMessage {
-                                title: format!("⚠️ Weather Alert: {} Failed", job_name),
-                                body: format!("Failed to fetch forecast for {}: {}", city, e),
-                                priority: Priority::High,
-                                tags: vec!["warning".to_string()],
-                            };
                             let _ = notification_service.send(&message).await;
                         }
+
+                        // Also send error to Expo push
+                        let _ = devices_service.broadcast(&message).await;
                     }
                 }
             })
