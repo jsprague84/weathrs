@@ -175,10 +175,10 @@ impl SchedulerService {
                                     }
                                 }
 
-                                // Send to Expo push (all registered devices)
-                                match devices_service.broadcast(&message).await {
+                                // Send to Expo push (devices subscribed to this city)
+                                match devices_service.send_to_city(&city, &message).await {
                                     Ok(count) => {
-                                        tracing::info!(count = count, "Sent Expo push notifications");
+                                        tracing::info!(city = %city, count = count, "Sent Expo push notifications");
                                     }
                                     Err(e) => {
                                         tracing::error!(error = %e, "Failed to send Expo push notifications");
@@ -202,8 +202,8 @@ impl SchedulerService {
                                 let _ = notification_service.send(&message).await;
                             }
 
-                            // Also send error to Expo push
-                            let _ = devices_service.broadcast(&message).await;
+                            // Also send error to Expo push (devices subscribed to this city)
+                            let _ = devices_service.send_to_city(&city, &message).await;
                         }
                     }
                 })

@@ -135,16 +135,20 @@ pub async fn trigger_forecast(
             .into_response();
     }
 
-    // Also send Expo push notifications to registered devices
+    // Also send Expo push notifications to devices subscribed to this city
     if let Ok(forecast) = state
         .forecast_service
         .get_daily_forecast(&request.city, &units)
         .await
     {
         let message = build_push_message(&forecast);
-        match state.devices_service.broadcast(&message).await {
+        match state
+            .devices_service
+            .send_to_city(&request.city, &message)
+            .await
+        {
             Ok(count) => {
-                tracing::info!(count = count, "Sent Expo push notifications");
+                tracing::info!(city = %request.city, count = count, "Sent Expo push notifications");
             }
             Err(e) => {
                 tracing::error!(error = %e, "Failed to send Expo push notifications");
@@ -181,16 +185,16 @@ pub async fn trigger_forecast_by_city(
             .into_response();
     }
 
-    // Also send Expo push notifications to registered devices
+    // Also send Expo push notifications to devices subscribed to this city
     if let Ok(forecast) = state
         .forecast_service
         .get_daily_forecast(&city, units)
         .await
     {
         let message = build_push_message(&forecast);
-        match state.devices_service.broadcast(&message).await {
+        match state.devices_service.send_to_city(&city, &message).await {
             Ok(count) => {
-                tracing::info!(count = count, "Sent Expo push notifications");
+                tracing::info!(city = %city, count = count, "Sent Expo push notifications");
             }
             Err(e) => {
                 tracing::error!(error = %e, "Failed to send Expo push notifications");
