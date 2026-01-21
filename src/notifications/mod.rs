@@ -30,6 +30,9 @@ pub struct NotificationMessage {
     pub priority: Priority,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// City for navigation (used by Expo push notifications)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]

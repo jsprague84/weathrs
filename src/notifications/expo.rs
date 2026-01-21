@@ -10,6 +10,22 @@ pub struct ExpoClient {
     client: Client,
 }
 
+/// Data payload for push notifications
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PushNotificationData {
+    /// URL to navigate to when notification is tapped (e.g., "/forecast?city=Chicago")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
+    /// City the notification is about
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+
+    /// Full message body (for viewing in-app)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_body: Option<String>,
+}
+
 /// Expo push message format
 #[derive(Debug, Serialize)]
 pub struct ExpoPushMessage {
@@ -25,7 +41,7 @@ pub struct ExpoPushMessage {
 
     /// Custom data payload
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
+    pub data: Option<PushNotificationData>,
 
     /// Priority: default, normal, high
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -81,6 +97,21 @@ impl ExpoClient {
         }
     }
 
+    /// Build the data payload for a notification
+    fn build_data(message: &NotificationMessage) -> Option<PushNotificationData> {
+        // Build URL for navigation when notification is tapped
+        let url = message
+            .city
+            .as_ref()
+            .map(|city| format!("/forecast?city={}", city));
+
+        Some(PushNotificationData {
+            url,
+            city: message.city.clone(),
+            full_body: Some(message.body.clone()),
+        })
+    }
+
     /// Send a push notification to a single device
     pub async fn send_to_token(
         &self,
@@ -91,7 +122,7 @@ impl ExpoClient {
             to: token.to_string(),
             title: Some(message.title.clone()),
             body: message.body.clone(),
-            data: None,
+            data: Self::build_data(message),
             priority: Some(Self::convert_priority(message.priority)),
             sound: Some("default".to_string()),
             badge: None,
@@ -161,13 +192,14 @@ impl ExpoClient {
 
         // Expo recommends batching up to 100 notifications
         for chunk in tokens.chunks(100) {
+            let data = Self::build_data(message);
             let messages: Vec<ExpoPushMessage> = chunk
                 .iter()
                 .map(|token| ExpoPushMessage {
                     to: token.clone(),
                     title: Some(message.title.clone()),
                     body: message.body.clone(),
-                    data: None,
+                    data: data.clone(),
                     priority: Some(Self::convert_priority(message.priority)),
                     sound: Some("default".to_string()),
                     badge: None,

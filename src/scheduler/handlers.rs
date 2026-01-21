@@ -474,5 +474,6 @@ fn build_push_message(forecast: &ForecastResponse) -> NotificationMessage {
         body,
         priority,
         tags,
+        city: Some(city.clone()),
     }
 }

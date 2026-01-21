@@ -195,6 +195,7 @@ impl SchedulerService {
                                 body: format!("Failed to fetch forecast for {}: {}", city, e),
                                 priority: Priority::High,
                                 tags: vec!["warning".to_string()],
+                                city: Some(city.clone()),
                             };
 
                             if notification_service.is_configured() {
@@ -440,5 +441,6 @@ fn build_notification_message(
         body,
         priority,
         tags,
+        city: Some(city.clone()),
     }
 }

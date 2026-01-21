@@ -161,6 +161,7 @@ impl DevicesService {
             body: "This is a test notification from Weathrs!".to_string(),
             priority: Priority::Default,
             tags: vec!["test".to_string()],
+            city: None,
         };
 
         self.expo_client
