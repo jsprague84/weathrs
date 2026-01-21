@@ -176,10 +176,7 @@ impl ExpoClient {
                 })
                 .collect();
 
-            tracing::debug!(
-                chunk_size = chunk.len(),
-                "Sending chunk to Expo API"
-            );
+            tracing::debug!(chunk_size = chunk.len(), "Sending chunk to Expo API");
 
             match self
                 .client
