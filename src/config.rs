@@ -28,51 +28,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub display: DisplayConfig,
 
-    /// Notification configuration
-    #[serde(default)]
-    pub notifications: NotificationConfig,
-
     /// Scheduled jobs configuration
     #[serde(default)]
     pub scheduler: SchedulerConfig,
-}
-
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct NotificationConfig {
-    /// ntfy configuration
-    #[serde(default)]
-    pub ntfy: Option<NtfyConfig>,
-
-    /// gotify configuration
-    #[serde(default)]
-    pub gotify: Option<GotifyConfig>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct NtfyConfig {
-    /// ntfy server URL (e.g., https://ntfy.sh or self-hosted)
-    pub url: String,
-
-    /// Topic to publish to
-    pub topic: String,
-
-    /// Optional auth token for private topics (use either token OR username/password)
-    pub token: Option<String>,
-
-    /// Username for basic authentication (use with password)
-    pub username: Option<String>,
-
-    /// Password for basic authentication (use with username)
-    pub password: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct GotifyConfig {
-    /// Gotify server URL
-    pub url: String,
-
-    /// Application token
-    pub token: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

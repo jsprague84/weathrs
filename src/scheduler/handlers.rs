@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::jobs::{ForecastJob, NotifyConfig};
-use crate::forecast::models::ForecastResponse;
-use crate::notifications::{NotificationMessage, Priority};
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -124,7 +122,6 @@ pub async fn trigger_forecast(
 ) -> impl IntoResponse {
     let units = request.units.unwrap_or_else(|| state.config.units.clone());
 
-    // Send to ntfy/gotify via scheduler service
     if let Err(e) = state.scheduler_service.run_now(&request.city, &units).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -133,27 +130,6 @@ pub async fn trigger_forecast(
             }),
         )
             .into_response();
-    }
-
-    // Also send Expo push notifications to devices subscribed to this city
-    if let Ok(forecast) = state
-        .forecast_service
-        .get_daily_forecast(&request.city, &units)
-        .await
-    {
-        let message = build_push_message(&forecast);
-        match state
-            .devices_service
-            .send_to_city(&request.city, &message)
-            .await
-        {
-            Ok(count) => {
-                tracing::info!(city = %request.city, count = count, "Sent Expo push notifications");
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to send Expo push notifications");
-            }
-        }
     }
 
     (
@@ -174,7 +150,6 @@ pub async fn trigger_forecast_by_city(
 ) -> impl IntoResponse {
     let units = &state.config.units;
 
-    // Send to ntfy/gotify via scheduler service
     if let Err(e) = state.scheduler_service.run_now(&city, units).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -183,23 +158,6 @@ pub async fn trigger_forecast_by_city(
             }),
         )
             .into_response();
-    }
-
-    // Also send Expo push notifications to devices subscribed to this city
-    if let Ok(forecast) = state
-        .forecast_service
-        .get_daily_forecast(&city, units)
-        .await
-    {
-        let message = build_push_message(&forecast);
-        match state.devices_service.send_to_city(&city, &message).await {
-            Ok(count) => {
-                tracing::info!(city = %city, count = count, "Sent Expo push notifications");
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to send Expo push notifications");
-            }
-        }
     }
 
     (
@@ -216,10 +174,11 @@ pub async fn trigger_forecast_by_city(
 /// GET /scheduler/status
 pub async fn scheduler_status(State(state): State<AppState>) -> Json<SchedulerStatus> {
     let jobs = state.scheduler_service.get_jobs().await;
+    let device_count = state.devices_service.count().await;
     Json(SchedulerStatus {
         running: true,
         job_count: jobs.len(),
-        notifications_configured: state.notification_service.is_configured(),
+        device_count,
     })
 }
 
@@ -227,7 +186,7 @@ pub async fn scheduler_status(State(state): State<AppState>) -> Json<SchedulerSt
 pub struct SchedulerStatus {
     pub running: bool,
     pub job_count: usize,
-    pub notifications_configured: bool,
+    pub device_count: usize,
 }
 
 /// Create a new scheduled job
@@ -423,61 +382,5 @@ pub async fn delete_job(
             )
                 .into_response()
         }
-    }
-}
-
-/// Build a notification message for Expo push from forecast data
-fn build_push_message(forecast: &ForecastResponse) -> NotificationMessage {
-    let city = &forecast.location.city;
-    let country = &forecast.location.country;
-
-    let mut body = String::new();
-
-    if let Some(ref current) = forecast.current {
-        body.push_str(&format!(
-            "🌡️ Now: {:.1}° (feels {:.1}°)\n",
-            current.temperature, current.feels_like
-        ));
-        body.push_str(&format!("☁️ {}\n", current.description));
-    }
-
-    if let Some(today) = forecast.daily.first() {
-        body.push_str(&format!(
-            "📊 Today: {:.0}° - {:.0}°\n",
-            today.temp_min, today.temp_max
-        ));
-        if today.precipitation_probability > 0.0 {
-            body.push_str(&format!(
-                "🌧️ Rain: {:.0}% chance\n",
-                today.precipitation_probability * 100.0
-            ));
-        }
-        if let Some(ref summary) = today.summary {
-            body.push_str(&format!("📝 {}", summary));
-        }
-    }
-
-    let priority = if !forecast.alerts.is_empty() {
-        body.push_str("\n\n⚠️ WEATHER ALERTS:\n");
-        for alert in &forecast.alerts {
-            body.push_str(&format!("• {}\n", alert.event));
-        }
-        Priority::Urgent
-    } else {
-        Priority::Default
-    };
-
-    let tags = if !forecast.alerts.is_empty() {
-        vec!["warning".to_string(), "weather".to_string()]
-    } else {
-        vec!["sunny".to_string(), "weather".to_string()]
-    };
-
-    NotificationMessage {
-        title: format!("🌤️ Weather: {}, {}", city, country),
-        body,
-        priority,
-        tags,
-        city: Some(city.clone()),
     }
 }

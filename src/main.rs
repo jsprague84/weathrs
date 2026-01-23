@@ -18,7 +18,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use crate::config::AppConfig;
 use crate::devices::{handlers as devices_handlers, DevicesService};
 use crate::forecast::{handlers as forecast_handlers, ForecastService};
-use crate::notifications::{NotificationService, NotificationServiceConfig};
 use crate::scheduler::{handlers as scheduler_handlers, JobConfig, SchedulerService};
 use crate::weather::{handlers as weather_handlers, WeatherService};
 
@@ -32,7 +31,6 @@ pub struct AppState {
     pub http_client: Client,
     pub weather_service: Arc<WeatherService>,
     pub forecast_service: Arc<ForecastService>,
-    pub notification_service: Arc<NotificationService>,
     pub scheduler_service: Arc<SchedulerService>,
     pub devices_service: Arc<DevicesService>,
     pub config: Arc<AppConfig>,
@@ -117,43 +115,7 @@ async fn main() -> anyhow::Result<()> {
         &config.openweathermap_api_key,
     ));
 
-    // Initialize notification service with shared client
-    let notification_service = Arc::new(NotificationService::from_config(
-        NotificationServiceConfig {
-            client: http_client.clone(),
-            ntfy_url: config.notifications.ntfy.as_ref().map(|n| n.url.as_str()),
-            ntfy_topic: config.notifications.ntfy.as_ref().map(|n| n.topic.as_str()),
-            ntfy_token: config
-                .notifications
-                .ntfy
-                .as_ref()
-                .and_then(|n| n.token.as_deref()),
-            ntfy_username: config
-                .notifications
-                .ntfy
-                .as_ref()
-                .and_then(|n| n.username.as_deref()),
-            ntfy_password: config
-                .notifications
-                .ntfy
-                .as_ref()
-                .and_then(|n| n.password.as_deref()),
-            gotify_url: config.notifications.gotify.as_ref().map(|g| g.url.as_str()),
-            gotify_token: config
-                .notifications
-                .gotify
-                .as_ref()
-                .map(|g| g.token.as_str()),
-        },
-    ));
-
-    if notification_service.is_configured() {
-        tracing::info!("Notification service configured");
-    } else {
-        tracing::info!("No notification services configured");
-    }
-
-    // Initialize devices service for push notifications (before scheduler so it can use it)
+    // Initialize devices service for Expo push notifications
     let devices_service = Arc::new(DevicesService::new(
         http_client.clone(),
         "data/devices.json",
@@ -165,7 +127,6 @@ async fn main() -> anyhow::Result<()> {
     let scheduler_service = Arc::new(
         SchedulerService::new(
             Arc::clone(&forecast_service),
-            Arc::clone(&notification_service),
             Arc::clone(&devices_service),
             "data/scheduler_jobs.json",
         )
@@ -195,7 +156,6 @@ async fn main() -> anyhow::Result<()> {
         http_client,
         weather_service,
         forecast_service,
-        notification_service,
         scheduler_service,
         devices_service,
         config: Arc::new(config.clone()),

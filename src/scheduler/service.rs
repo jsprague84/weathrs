@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::devices::DevicesService;
 use crate::forecast::ForecastService;
-use crate::notifications::{NotificationMessage, NotificationService, Priority};
+use crate::notifications::{NotificationMessage, Priority};
 
 use super::jobs::{ForecastJob, JobConfig};
 use super::storage::JobStorage;
@@ -35,7 +35,6 @@ pub enum SchedulerError {
 pub struct SchedulerService {
     scheduler: JobScheduler,
     forecast_service: Arc<ForecastService>,
-    notification_service: Arc<NotificationService>,
     devices_service: Arc<DevicesService>,
     /// Maps our job IDs to scheduler's internal UUIDs
     job_uuids: Arc<RwLock<HashMap<String, Uuid>>>,
@@ -46,7 +45,6 @@ pub struct SchedulerService {
 impl SchedulerService {
     pub async fn new(
         forecast_service: Arc<ForecastService>,
-        notification_service: Arc<NotificationService>,
         devices_service: Arc<DevicesService>,
         storage_path: &str,
     ) -> Result<Self> {
@@ -56,7 +54,6 @@ impl SchedulerService {
         Ok(Self {
             scheduler,
             forecast_service,
-            notification_service,
             devices_service,
             job_uuids: Arc::new(RwLock::new(HashMap::new())),
             storage,
@@ -112,7 +109,6 @@ impl SchedulerService {
         let include_daily = job_config.include_daily;
 
         let forecast_service = Arc::clone(&self.forecast_service);
-        let notification_service = Arc::clone(&self.notification_service);
         let devices_service = Arc::clone(&self.devices_service);
 
         // Parse the timezone string to chrono_tz::Tz
@@ -141,7 +137,6 @@ impl SchedulerService {
                 let job_name = job_name.clone();
                 let notify_config = notify_config.clone();
                 let forecast_service = Arc::clone(&forecast_service);
-                let notification_service = Arc::clone(&notification_service);
                 let devices_service = Arc::clone(&devices_service);
 
                 Box::pin(async move {
@@ -166,22 +161,15 @@ impl SchedulerService {
                             let should_notify = should_notify_for_forecast(&forecast, &notify_config);
 
                             if should_notify {
-                                let message = build_notification_message(&forecast, &notify_config);
-
-                                // Send to ntfy/gotify
-                                if notification_service.is_configured() {
-                                    if let Err(e) = notification_service.send(&message).await {
-                                        tracing::error!(error = %e, "Failed to send ntfy/gotify notification");
-                                    }
-                                }
+                                let message = build_notification_message(&forecast);
 
                                 // Send to Expo push (devices subscribed to this city)
                                 match devices_service.send_to_city(&city, &message).await {
                                     Ok(count) => {
-                                        tracing::info!(city = %city, count = count, "Sent Expo push notifications");
+                                        tracing::info!(city = %city, count = count, "Sent push notifications");
                                     }
                                     Err(e) => {
-                                        tracing::error!(error = %e, "Failed to send Expo push notifications");
+                                        tracing::error!(error = %e, "Failed to send push notifications");
                                     }
                                 }
                             }
@@ -189,20 +177,15 @@ impl SchedulerService {
                         Err(e) => {
                             tracing::error!(job = %job_name, error = %e, "Failed to fetch forecast");
 
-                            // Notify on error if configured
+                            // Send error notification to devices subscribed to this city
                             let message = NotificationMessage {
-                                title: format!("⚠️ Weather Alert: {} Failed", job_name),
+                                title: format!("Weather Alert: {} Failed", job_name),
                                 body: format!("Failed to fetch forecast for {}: {}", city, e),
                                 priority: Priority::High,
                                 tags: vec!["warning".to_string()],
                                 city: Some(city.clone()),
                             };
 
-                            if notification_service.is_configured() {
-                                let _ = notification_service.send(&message).await;
-                            }
-
-                            // Also send error to Expo push (devices subscribed to this city)
                             let _ = devices_service.send_to_city(&city, &message).await;
                         }
                     }
@@ -323,7 +306,7 @@ impl SchedulerService {
         self.storage.get_all().await
     }
 
-    /// Run a job immediately (manual trigger)
+    /// Run a job immediately (manual trigger) - sends to all devices subscribed to the city
     pub async fn run_now(&self, city: &str, units: &str) -> Result<()> {
         tracing::info!(city = %city, "Running manual forecast job");
 
@@ -332,14 +315,8 @@ impl SchedulerService {
             .get_daily_forecast(city, units)
             .await?;
 
-        if self.notification_service.is_configured() {
-            let notify_config = super::jobs::NotifyConfig {
-                on_run: true,
-                ..Default::default()
-            };
-            let message = build_notification_message(&forecast, &notify_config);
-            self.notification_service.send(&message).await?;
-        }
+        let message = build_notification_message(&forecast);
+        self.devices_service.send_to_city(city, &message).await?;
 
         Ok(())
     }
@@ -387,7 +364,6 @@ fn should_notify_for_forecast(
 
 fn build_notification_message(
     forecast: &crate::forecast::models::ForecastResponse,
-    _config: &super::jobs::NotifyConfig,
 ) -> NotificationMessage {
     let city = &forecast.location.city;
     let country = &forecast.location.country;
@@ -397,33 +373,33 @@ fn build_notification_message(
 
     if let Some(ref current) = forecast.current {
         body.push_str(&format!(
-            "🌡️ Now: {:.1}° (feels {:.1}°)\n",
+            "Now: {:.1} (feels {:.1})\n",
             current.temperature, current.feels_like
         ));
-        body.push_str(&format!("☁️ {}\n", current.description));
+        body.push_str(&format!("{}\n", current.description));
     }
 
     if let Some(today) = forecast.daily.first() {
         body.push_str(&format!(
-            "📊 Today: {:.0}° - {:.0}°\n",
+            "Today: {:.0} - {:.0}\n",
             today.temp_min, today.temp_max
         ));
         if today.precipitation_probability > 0.0 {
             body.push_str(&format!(
-                "🌧️ Rain: {:.0}% chance\n",
+                "Rain: {:.0}% chance\n",
                 today.precipitation_probability * 100.0
             ));
         }
         if let Some(ref summary) = today.summary {
-            body.push_str(&format!("📝 {}", summary));
+            body.push_str(summary);
         }
     }
 
     // Check for alerts
     let priority = if !forecast.alerts.is_empty() {
-        body.push_str("\n\n⚠️ WEATHER ALERTS:\n");
+        body.push_str("\n\nWEATHER ALERTS:\n");
         for alert in &forecast.alerts {
-            body.push_str(&format!("• {}\n", alert.event));
+            body.push_str(&format!("- {}\n", alert.event));
         }
         Priority::Urgent
     } else {
@@ -437,7 +413,7 @@ fn build_notification_message(
     };
 
     NotificationMessage {
-        title: format!("🌤️ Weather: {}, {}", city, country),
+        title: format!("Weather: {}, {}", city, country),
         body,
         priority,
         tags,
