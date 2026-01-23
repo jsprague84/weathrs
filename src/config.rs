@@ -24,6 +24,14 @@ pub struct AppConfig {
     #[serde(default = "default_units")]
     pub units: String,
 
+    /// API key for device endpoints (optional - if not set, no auth required)
+    #[serde(default)]
+    pub device_api_key: Option<String>,
+
+    /// Database URL (SQLite connection string)
+    #[serde(default = "default_database_url")]
+    pub database_url: String,
+
     /// Display configuration
     #[serde(default)]
     pub display: DisplayConfig,
@@ -103,6 +111,10 @@ fn default_city() -> String {
 
 fn default_units() -> String {
     "metric".to_string()
+}
+
+fn default_database_url() -> String {
+    "sqlite:data/weathrs.db".to_string()
 }
 
 fn default_true() -> bool {

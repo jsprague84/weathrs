@@ -420,3 +420,188 @@ fn build_notification_message(
         city: Some(city.clone()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forecast::models::*;
+
+    fn create_test_forecast(
+        current_temp: Option<f64>,
+        alerts: Vec<AlertResponse>,
+        daily_precip_prob: f64,
+    ) -> ForecastResponse {
+        ForecastResponse {
+            location: LocationInfo {
+                city: "Chicago".to_string(),
+                country: "US".to_string(),
+                state: Some("Illinois".to_string()),
+                lat: 41.8781,
+                lon: -87.6298,
+            },
+            timezone: "America/Chicago".to_string(),
+            current: current_temp.map(|temp| CurrentWeatherResponse {
+                timestamp: 1700000000,
+                temperature: temp,
+                feels_like: temp - 1.0,
+                humidity: 65,
+                pressure: 1013,
+                uv_index: 3.5,
+                clouds: 40,
+                visibility: Some(10000),
+                wind_speed: 5.5,
+                wind_direction: 180,
+                wind_gust: None,
+                description: "clear sky".to_string(),
+                icon: "01d".to_string(),
+                sunrise: Some(1699980000),
+                sunset: Some(1700020000),
+            }),
+            hourly: vec![],
+            daily: vec![DailyForecastResponse {
+                timestamp: 1700000000,
+                sunrise: 1699980000,
+                sunset: 1700020000,
+                moon_phase: 0.5,
+                summary: Some("Clear skies".to_string()),
+                temp_min: 15.0,
+                temp_max: 25.0,
+                temp_day: 22.0,
+                temp_night: 16.0,
+                temp_morning: 18.0,
+                temp_evening: 20.0,
+                feels_like_day: 21.0,
+                feels_like_night: 15.0,
+                humidity: 60,
+                pressure: 1013,
+                uv_index: 5.0,
+                clouds: 20,
+                wind_speed: 4.0,
+                wind_direction: 180,
+                precipitation_probability: daily_precip_prob,
+                rain_volume: None,
+                snow_volume: None,
+                description: "clear sky".to_string(),
+                icon: "01d".to_string(),
+            }],
+            alerts,
+        }
+    }
+
+    fn create_default_notify_config() -> super::super::jobs::NotifyConfig {
+        super::super::jobs::NotifyConfig {
+            on_run: false,
+            on_alert: false,
+            on_precipitation: false,
+            cold_threshold: None,
+            heat_threshold: None,
+        }
+    }
+
+    #[test]
+    fn test_should_notify_on_run_true() {
+        let forecast = create_test_forecast(Some(20.0), vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.on_run = true;
+
+        assert!(should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_on_run_false() {
+        let forecast = create_test_forecast(Some(20.0), vec![], 0.0);
+        let config = create_default_notify_config();
+
+        assert!(!should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_on_alert_with_alerts() {
+        let alerts = vec![AlertResponse {
+            sender: "NWS".to_string(),
+            event: "Heat Advisory".to_string(),
+            start: 1700000000,
+            end: 1700100000,
+            description: "Heat warning".to_string(),
+            tags: None,
+        }];
+        let forecast = create_test_forecast(Some(35.0), alerts, 0.0);
+        let mut config = create_default_notify_config();
+        config.on_alert = true;
+
+        assert!(should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_on_alert_without_alerts() {
+        let forecast = create_test_forecast(Some(20.0), vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.on_alert = true;
+
+        assert!(!should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_on_precipitation_high_chance() {
+        let forecast = create_test_forecast(Some(20.0), vec![], 0.75);
+        let mut config = create_default_notify_config();
+        config.on_precipitation = true;
+
+        assert!(should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_on_precipitation_low_chance() {
+        let forecast = create_test_forecast(Some(20.0), vec![], 0.3);
+        let mut config = create_default_notify_config();
+        config.on_precipitation = true;
+
+        assert!(!should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_cold_threshold_triggered() {
+        let forecast = create_test_forecast(Some(-5.0), vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.cold_threshold = Some(0.0);
+
+        assert!(should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_cold_threshold_not_triggered() {
+        let forecast = create_test_forecast(Some(10.0), vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.cold_threshold = Some(0.0);
+
+        assert!(!should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_heat_threshold_triggered() {
+        let forecast = create_test_forecast(Some(38.0), vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.heat_threshold = Some(35.0);
+
+        assert!(should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_heat_threshold_not_triggered() {
+        let forecast = create_test_forecast(Some(25.0), vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.heat_threshold = Some(35.0);
+
+        assert!(!should_notify_for_forecast(&forecast, &config));
+    }
+
+    #[test]
+    fn test_should_notify_no_current_weather() {
+        let forecast = create_test_forecast(None, vec![], 0.0);
+        let mut config = create_default_notify_config();
+        config.cold_threshold = Some(0.0);
+
+        // Should not notify since there's no current weather to check
+        assert!(!should_notify_for_forecast(&forecast, &config));
+    }
+}

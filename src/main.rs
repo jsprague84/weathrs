@@ -1,25 +1,30 @@
+mod cache;
 mod config;
+mod db;
 mod devices;
+mod error;
+mod extractors;
 mod forecast;
+mod middleware;
 mod notifications;
+mod openapi;
+mod routes;
 mod scheduler;
 mod weather;
 
-use axum::{
-    error_handling::HandleErrorLayer, http::StatusCode, routing::get, routing::post, routing::put,
-    BoxError, Router,
-};
+use axum::{error_handling::HandleErrorLayer, http::StatusCode, BoxError};
 use reqwest::Client;
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::cache::{create_geo_cache, start_cache_cleanup_task};
 use crate::config::AppConfig;
-use crate::devices::{handlers as devices_handlers, DevicesService};
-use crate::forecast::{handlers as forecast_handlers, ForecastService};
-use crate::scheduler::{handlers as scheduler_handlers, JobConfig, SchedulerService};
-use crate::weather::{handlers as weather_handlers, WeatherService};
+use crate::devices::DevicesService;
+use crate::forecast::ForecastService;
+use crate::scheduler::{JobConfig, SchedulerService};
+use crate::weather::WeatherService;
 
 /// Shared HTTP client configuration
 const HTTP_TIMEOUT_SECS: u64 = 30;
@@ -37,14 +42,13 @@ pub struct AppState {
 }
 
 /// Create shared HTTP client with connection pooling
-fn create_http_client() -> Client {
+fn create_http_client() -> Result<Client, reqwest::Error> {
     Client::builder()
         .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
         .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
         .pool_idle_timeout(Duration::from_secs(HTTP_POOL_IDLE_TIMEOUT_SECS))
         .pool_max_idle_per_host(10)
         .build()
-        .expect("Failed to create HTTP client")
 }
 
 /// Handle request timeout errors
@@ -102,8 +106,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Configuration loaded successfully");
 
     // Create shared HTTP client with connection pooling
-    let http_client = create_http_client();
+    let http_client = create_http_client()?;
     tracing::debug!("Shared HTTP client created");
+
+    // Create geocoding cache with 24-hour TTL
+    let geo_cache = create_geo_cache();
+    start_cache_cleanup_task(geo_cache.clone());
+    tracing::debug!("Geocoding cache initialized");
 
     // Initialize services with shared client
     let weather_service = Arc::new(WeatherService::new(
@@ -113,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
     let forecast_service = Arc::new(ForecastService::new(
         http_client.clone(),
         &config.openweathermap_api_key,
+        geo_cache,
     ));
 
     // Initialize devices service for Expo push notifications
@@ -161,78 +171,8 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config.clone()),
     };
 
-    // Build router
-    let app = Router::new()
-        // Health check
-        .route("/", get(weather_handlers::health))
-        .route("/health", get(weather_handlers::health))
-        // Current weather (basic API)
-        .route("/weather", get(weather_handlers::get_weather))
-        .route(
-            "/weather/{city}",
-            get(weather_handlers::get_weather_by_city),
-        )
-        // Forecast (One Call API 3.0)
-        .route("/forecast", get(forecast_handlers::get_forecast))
-        .route(
-            "/forecast/{city}",
-            get(forecast_handlers::get_forecast_by_city),
-        )
-        .route(
-            "/forecast/daily",
-            get(forecast_handlers::get_daily_forecast),
-        )
-        .route(
-            "/forecast/daily/{city}",
-            get(forecast_handlers::get_daily_forecast_by_city),
-        )
-        .route(
-            "/forecast/hourly",
-            get(forecast_handlers::get_hourly_forecast),
-        )
-        .route(
-            "/forecast/hourly/{city}",
-            get(forecast_handlers::get_hourly_forecast_by_city),
-        )
-        // Scheduler endpoints
-        .route(
-            "/scheduler/status",
-            get(scheduler_handlers::scheduler_status),
-        )
-        .route(
-            "/scheduler/jobs",
-            get(scheduler_handlers::list_jobs).post(scheduler_handlers::create_job),
-        )
-        .route(
-            "/scheduler/jobs/{id}",
-            get(scheduler_handlers::get_job)
-                .put(scheduler_handlers::update_job)
-                .delete(scheduler_handlers::delete_job),
-        )
-        .route(
-            "/scheduler/trigger",
-            post(scheduler_handlers::trigger_forecast),
-        )
-        .route(
-            "/scheduler/trigger/{city}",
-            post(scheduler_handlers::trigger_forecast_by_city),
-        )
-        // Device registration endpoints for push notifications
-        .route("/devices/register", post(devices_handlers::register_device))
-        .route(
-            "/devices/unregister",
-            post(devices_handlers::unregister_device),
-        )
-        .route(
-            "/devices/settings",
-            put(devices_handlers::update_device_settings),
-        )
-        .route(
-            "/devices/test",
-            post(devices_handlers::send_test_notification),
-        )
-        .route("/devices/count", get(devices_handlers::get_device_count))
-        .route("/devices/debug", get(devices_handlers::list_devices))
+    // Build router using the routes module
+    let app = routes::build_router(state.clone())
         .layer(
             ServiceBuilder::new()
                 // Handle timeout errors

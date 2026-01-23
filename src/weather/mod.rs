@@ -1,4 +1,4 @@
 pub mod handlers;
-mod service;
+pub mod service;
 
-pub use service::WeatherService;
+pub use service::{WeatherResponse, WeatherService};

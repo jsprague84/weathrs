@@ -17,6 +17,15 @@ port = 3000
 default_city = "London"
 units = "metric"  # metric, imperial, or standard
 
+# Device API authentication (optional)
+# If set, device endpoints (/api/v1/devices/*) require X-API-Key header
+# If not set, device endpoints are open (development mode)
+# device_api_key = "your_secret_key_here"
+
+# Database configuration (SQLite)
+# Default: sqlite:data/weathrs.db
+# database_url = "sqlite:data/weathrs.db"
+
 # Display configuration - what to show in weather response
 [display]
 temperature = true

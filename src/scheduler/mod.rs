@@ -1,7 +1,7 @@
 pub mod handlers;
-mod jobs;
+pub mod jobs;
 mod service;
 mod storage;
 
-pub use jobs::{ForecastJob, JobConfig};
+pub use jobs::{ForecastJob, JobConfig, NotifyConfig};
 pub use service::SchedulerService;

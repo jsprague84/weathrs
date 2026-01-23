@@ -1,13 +1,11 @@
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
+use axum::http::StatusCode;
 use reqwest::Client;
-use serde::Serialize;
 use thiserror::Error;
 
 use super::models::*;
+use crate::cache::{normalize_cache_key, CachedGeoLocation, GeoCache};
+use crate::error::HttpError;
+use crate::impl_into_response;
 
 const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
 const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
@@ -31,39 +29,42 @@ pub enum ForecastError {
     SubscriptionRequired,
 }
 
-impl IntoResponse for ForecastError {
-    fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            ForecastError::CityNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            ForecastError::RequestError(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
-            ForecastError::ApiError(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            ForecastError::InvalidResponse(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
-            }
-            ForecastError::SubscriptionRequired => (StatusCode::PAYMENT_REQUIRED, self.to_string()),
-        };
+impl HttpError for ForecastError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::CityNotFound(_) => StatusCode::NOT_FOUND,
+            Self::RequestError(_) => StatusCode::BAD_GATEWAY,
+            Self::ApiError(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::SubscriptionRequired => StatusCode::PAYMENT_REQUIRED,
+        }
+    }
 
-        tracing::error!(error = %self, status = %status, "Forecast API error");
-
-        (status, Json(ErrorBody { error: message })).into_response()
+    fn error_code(&self) -> Option<&'static str> {
+        match self {
+            Self::CityNotFound(_) => Some("CITY_NOT_FOUND"),
+            Self::RequestError(_) => Some("REQUEST_ERROR"),
+            Self::ApiError(_) => Some("API_ERROR"),
+            Self::InvalidResponse(_) => Some("INVALID_RESPONSE"),
+            Self::SubscriptionRequired => Some("SUBSCRIPTION_REQUIRED"),
+        }
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    error: String,
-}
+impl_into_response!(ForecastError);
 
 pub struct ForecastService {
     client: Client,
     api_key: String,
+    geo_cache: GeoCache,
 }
 
 impl ForecastService {
-    pub fn new(client: Client, api_key: &str) -> Self {
+    pub fn new(client: Client, api_key: &str, geo_cache: GeoCache) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),
+            geo_cache,
         }
     }
 
@@ -79,12 +80,44 @@ impl ForecastService {
 
     /// Get coordinates for a location using the Geocoding API
     /// Supports both city names ("Chicago") and zip codes ("60601" or "60601,US")
+    /// Results are cached for 24 hours
     pub async fn geocode(&self, location: &str) -> Result<GeoLocation, ForecastError> {
-        if Self::is_zip_code(location) {
+        let cache_key = normalize_cache_key(location);
+
+        // Check cache first
+        if let Some(cached) = self.geo_cache.get(&cache_key) {
+            tracing::debug!(location = %location, "Geocoding cache hit");
+            return Ok(GeoLocation {
+                name: cached.name,
+                lat: cached.lat,
+                lon: cached.lon,
+                country: cached.country,
+                state: cached.state,
+            });
+        }
+
+        tracing::debug!(location = %location, "Geocoding cache miss");
+
+        // Fetch from API
+        let result = if Self::is_zip_code(location) {
             self.geocode_zip(location).await
         } else {
             self.geocode_city(location).await
-        }
+        }?;
+
+        // Cache the result
+        self.geo_cache.insert(
+            cache_key,
+            CachedGeoLocation {
+                name: result.name.clone(),
+                lat: result.lat,
+                lon: result.lon,
+                country: result.country.clone(),
+                state: result.state.clone(),
+            },
+        );
+
+        Ok(result)
     }
 
     /// Geocode by city name
@@ -366,5 +399,159 @@ impl ForecastService {
                 })
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_zip_code_us_numeric() {
+        assert!(ForecastService::is_zip_code("60601"));
+        assert!(ForecastService::is_zip_code("90210"));
+        assert!(ForecastService::is_zip_code("10001"));
+    }
+
+    #[test]
+    fn test_is_zip_code_with_country() {
+        assert!(ForecastService::is_zip_code("60601,US"));
+        assert!(ForecastService::is_zip_code("90210,US"));
+        assert!(ForecastService::is_zip_code("10001,DE"));
+    }
+
+    #[test]
+    fn test_is_zip_code_trims_whitespace() {
+        assert!(ForecastService::is_zip_code(" 60601 "));
+        assert!(ForecastService::is_zip_code("60601 ,US"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_city_names() {
+        assert!(!ForecastService::is_zip_code("Chicago"));
+        assert!(!ForecastService::is_zip_code("London"));
+        assert!(!ForecastService::is_zip_code("New York"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_city_with_country() {
+        assert!(!ForecastService::is_zip_code("London,GB"));
+        assert!(!ForecastService::is_zip_code("Paris,FR"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_mixed() {
+        assert!(!ForecastService::is_zip_code("E14 5AB")); // UK postal code
+        assert!(!ForecastService::is_zip_code("SW1A 1AA,GB"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_multiple_commas() {
+        assert!(!ForecastService::is_zip_code("60601,US,IL"));
+    }
+
+    fn create_test_location() -> GeoLocation {
+        GeoLocation {
+            name: "Chicago".to_string(),
+            lat: 41.8781,
+            lon: -87.6298,
+            country: "US".to_string(),
+            state: Some("Illinois".to_string()),
+        }
+    }
+
+    fn create_minimal_one_call_response() -> OneCallResponse {
+        OneCallResponse {
+            lat: 41.8781,
+            lon: -87.6298,
+            timezone: "America/Chicago".to_string(),
+            timezone_offset: -18000,
+            current: None,
+            minutely: None,
+            hourly: None,
+            daily: None,
+            alerts: None,
+        }
+    }
+
+    #[test]
+    fn test_transform_response_minimal() {
+        let geo_cache = crate::cache::create_geo_cache();
+        let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
+
+        let data = create_minimal_one_call_response();
+        let location = create_test_location();
+        let result = service.transform_response(data, location);
+
+        assert_eq!(result.location.city, "Chicago");
+        assert_eq!(result.location.country, "US");
+        assert_eq!(result.timezone, "America/Chicago");
+        assert!(result.current.is_none());
+        assert!(result.hourly.is_empty());
+        assert!(result.daily.is_empty());
+        assert!(result.alerts.is_empty());
+    }
+
+    #[test]
+    fn test_transform_response_with_current_weather() {
+        let geo_cache = crate::cache::create_geo_cache();
+        let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
+
+        let mut data = create_minimal_one_call_response();
+        data.current = Some(CurrentWeather {
+            dt: 1700000000,
+            sunrise: Some(1699980000),
+            sunset: Some(1700020000),
+            temp: 20.5,
+            feels_like: 19.0,
+            pressure: 1013,
+            humidity: 65,
+            dew_point: 14.0,
+            uvi: 3.5,
+            clouds: 40,
+            visibility: Some(10000),
+            wind_speed: 5.5,
+            wind_deg: 180,
+            wind_gust: Some(8.0),
+            weather: vec![WeatherCondition {
+                id: 800,
+                main: "Clear".to_string(),
+                description: "clear sky".to_string(),
+                icon: "01d".to_string(),
+            }],
+        });
+
+        let location = create_test_location();
+        let result = service.transform_response(data, location);
+
+        let current = result.current.expect("Current weather should be present");
+        assert_eq!(current.temperature, 20.5);
+        assert_eq!(current.feels_like, 19.0);
+        assert_eq!(current.humidity, 65);
+        assert_eq!(current.description, "clear sky");
+        assert_eq!(current.icon, "01d");
+    }
+
+    #[test]
+    fn test_transform_response_with_alerts() {
+        let geo_cache = crate::cache::create_geo_cache();
+        let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
+
+        let mut data = create_minimal_one_call_response();
+        data.alerts = Some(vec![WeatherAlert {
+            sender_name: "NWS Chicago".to_string(),
+            event: "Heat Advisory".to_string(),
+            start: 1700000000,
+            end: 1700100000,
+            description: "Excessive heat expected".to_string(),
+            tags: Some(vec!["Extreme temperature".to_string()]),
+        }]);
+
+        let location = create_test_location();
+        let result = service.transform_response(data, location);
+
+        assert_eq!(result.alerts.len(), 1);
+        assert_eq!(result.alerts[0].event, "Heat Advisory");
+        assert_eq!(result.alerts[0].sender, "NWS Chicago");
     }
 }

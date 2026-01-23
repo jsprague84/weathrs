@@ -1,11 +1,11 @@
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
+use axum::http::StatusCode;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use utoipa::ToSchema;
+
+use crate::error::HttpError;
+use crate::impl_into_response;
 
 const OPENWEATHERMAP_API_URL: &str = "https://api.openweathermap.org/data/2.5/weather";
 
@@ -24,31 +24,29 @@ pub enum WeatherError {
     InvalidResponse(String),
 }
 
-// Implement IntoResponse for WeatherError - Axum best practice
-// This allows handlers to return Result<T, WeatherError> directly
-impl IntoResponse for WeatherError {
-    fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            WeatherError::CityNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            WeatherError::RequestError(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
-            WeatherError::ApiError(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            WeatherError::InvalidResponse(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
-            }
-        };
+impl HttpError for WeatherError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::CityNotFound(_) => StatusCode::NOT_FOUND,
+            Self::RequestError(_) => StatusCode::BAD_GATEWAY,
+            Self::ApiError(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 
-        tracing::error!(error = %self, status = %status, "Weather API error");
-
-        (status, Json(ErrorBody { error: message })).into_response()
+    fn error_code(&self) -> Option<&'static str> {
+        match self {
+            Self::CityNotFound(_) => Some("CITY_NOT_FOUND"),
+            Self::RequestError(_) => Some("REQUEST_ERROR"),
+            Self::ApiError(_) => Some("API_ERROR"),
+            Self::InvalidResponse(_) => Some("INVALID_RESPONSE"),
+        }
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorBody {
-    error: String,
-}
+impl_into_response!(WeatherError);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct WeatherResponse {
     pub city: String,
     pub country: String,
@@ -198,5 +196,54 @@ impl WeatherService {
         tracing::info!(city = %weather.city, temp = %weather.temperature, "Weather data fetched successfully");
 
         Ok(weather)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_zip_code_us_numeric() {
+        assert!(WeatherService::is_zip_code("60601"));
+        assert!(WeatherService::is_zip_code("90210"));
+        assert!(WeatherService::is_zip_code("10001"));
+    }
+
+    #[test]
+    fn test_is_zip_code_with_country() {
+        assert!(WeatherService::is_zip_code("60601,US"));
+        assert!(WeatherService::is_zip_code("90210,US"));
+        assert!(WeatherService::is_zip_code("10001,DE"));
+    }
+
+    #[test]
+    fn test_is_zip_code_trims_whitespace() {
+        assert!(WeatherService::is_zip_code(" 60601 "));
+        assert!(WeatherService::is_zip_code("60601 ,US"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_city_names() {
+        assert!(!WeatherService::is_zip_code("Chicago"));
+        assert!(!WeatherService::is_zip_code("London"));
+        assert!(!WeatherService::is_zip_code("New York"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_city_with_country() {
+        assert!(!WeatherService::is_zip_code("London,GB"));
+        assert!(!WeatherService::is_zip_code("Paris,FR"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_mixed() {
+        assert!(!WeatherService::is_zip_code("E14 5AB")); // UK postal code
+        assert!(!WeatherService::is_zip_code("SW1A 1AA,GB"));
+    }
+
+    #[test]
+    fn test_is_not_zip_code_multiple_commas() {
+        assert!(!WeatherService::is_zip_code("60601,US,IL"));
     }
 }
