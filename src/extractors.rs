@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use axum::{
     extract::{FromRequestParts, Path, Query},
     http::{request::Parts, StatusCode},

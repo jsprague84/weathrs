@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod device_repo;
 mod job_repo;
 
