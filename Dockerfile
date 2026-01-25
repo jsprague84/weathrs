@@ -2,7 +2,8 @@
 FROM rust:alpine AS builder
 
 # Install build dependencies for native libs
-RUN apk add --no-cache musl-dev
+# curl is needed by utoipa-swagger-ui to download Swagger UI assets
+RUN apk add --no-cache musl-dev curl
 
 WORKDIR /app
 
