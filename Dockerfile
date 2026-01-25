@@ -16,8 +16,9 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 # Build dependencies only (cached layer)
 RUN cargo build --release && rm -rf src
 
-# Copy actual source code
+# Copy actual source code and migrations
 COPY src ./src
+COPY migrations ./migrations
 
 # Build the application
 RUN touch src/main.rs && cargo build --release
