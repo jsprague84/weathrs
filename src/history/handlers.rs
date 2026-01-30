@@ -58,7 +58,7 @@ pub async fn get_trends(
 
     let response = state
         .history_service
-        .get_trends(&city, &period, &units)
+        .get_trends(&city, &period, &units, query.start, query.end)
         .await?;
 
     Ok(Json(response))

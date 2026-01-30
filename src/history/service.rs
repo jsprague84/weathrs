@@ -298,21 +298,37 @@ impl HistoryService {
         city: &str,
         period: &str,
         units: &str,
+        custom_start: Option<i64>,
+        custom_end: Option<i64>,
     ) -> Result<TrendResponse, HistoryError> {
         let now = chrono::Utc::now().timestamp();
-        let days = match period {
-            "7d" => 7,
-            "30d" => 30,
-            "90d" => 90,
-            _ => {
-                return Err(HistoryError::InvalidDateRange(
-                    "period must be 7d, 30d, or 90d".to_string(),
-                ))
-            }
-        };
 
-        let start_ts = now - days * 86400;
-        let end_ts = now;
+        let (start_ts, end_ts) = if let (Some(s), Some(e)) = (custom_start, custom_end) {
+            if s >= e {
+                return Err(HistoryError::InvalidDateRange(
+                    "start must be before end".to_string(),
+                ));
+            }
+            let range_days = (e - s) / 86400;
+            if range_days > 365 {
+                return Err(HistoryError::InvalidDateRange(
+                    "custom range cannot exceed 365 days".to_string(),
+                ));
+            }
+            (s, e)
+        } else {
+            let days = match period {
+                "7d" => 7,
+                "30d" => 30,
+                "90d" => 90,
+                _ => {
+                    return Err(HistoryError::InvalidDateRange(
+                        "period must be 7d, 30d, or 90d".to_string(),
+                    ))
+                }
+            };
+            (now - days * 86400, now)
+        };
 
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();

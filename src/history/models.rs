@@ -157,4 +157,6 @@ pub struct HistoryQuery {
 pub struct TrendsQuery {
     pub period: Option<String>,
     pub units: Option<String>,
+    pub start: Option<i64>,
+    pub end: Option<i64>,
 }
