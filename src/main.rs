@@ -5,6 +5,7 @@ mod devices;
 mod error;
 mod extractors;
 mod forecast;
+mod history;
 mod middleware;
 mod notifications;
 mod openapi;
@@ -23,6 +24,7 @@ use crate::cache::{create_geo_cache, start_cache_cleanup_task};
 use crate::config::AppConfig;
 use crate::devices::DevicesService;
 use crate::forecast::ForecastService;
+use crate::history::HistoryService;
 use crate::scheduler::{JobConfig, SchedulerService};
 use crate::weather::WeatherService;
 
@@ -36,6 +38,7 @@ pub struct AppState {
     pub http_client: Client,
     pub weather_service: Arc<WeatherService>,
     pub forecast_service: Arc<ForecastService>,
+    pub history_service: Arc<HistoryService>,
     pub scheduler_service: Arc<SchedulerService>,
     pub devices_service: Arc<DevicesService>,
     pub config: Arc<AppConfig>,
@@ -109,6 +112,15 @@ async fn main() -> anyhow::Result<()> {
     let http_client = create_http_client()?;
     tracing::debug!("Shared HTTP client created");
 
+    // Initialize database
+    let db_config = db::DbConfig {
+        url: config.database_url.clone(),
+        ..Default::default()
+    };
+    let db_pool = db::create_pool(&db_config).await?;
+    db::run_migrations(&db_pool).await?;
+    tracing::info!("Database initialized");
+
     // Create geocoding cache with 24-hour TTL
     let geo_cache = create_geo_cache();
     start_cache_cleanup_task(geo_cache.clone());
@@ -122,7 +134,13 @@ async fn main() -> anyhow::Result<()> {
     let forecast_service = Arc::new(ForecastService::new(
         http_client.clone(),
         &config.openweathermap_api_key,
+        geo_cache.clone(),
+    ));
+    let history_service = Arc::new(HistoryService::new(
+        http_client.clone(),
+        &config.openweathermap_api_key,
         geo_cache,
+        db_pool,
     ));
 
     // Initialize devices service for Expo push notifications
@@ -166,6 +184,7 @@ async fn main() -> anyhow::Result<()> {
         http_client,
         weather_service,
         forecast_service,
+        history_service,
         scheduler_service,
         devices_service,
         config: Arc::new(config.clone()),

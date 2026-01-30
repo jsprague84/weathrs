@@ -2,6 +2,10 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::error::ErrorResponse;
+use crate::history::models::{
+    DailyHistoryResponse, DailyHistorySummary, HistoryDataPoint, HistoryResponse, TrendExtreme,
+    TrendResponse, TrendSummary,
+};
 use crate::weather::service::WeatherResponse;
 
 /// OpenAPI documentation for the Weathrs API
@@ -13,7 +17,7 @@ use crate::weather::service::WeatherResponse;
     info(
         title = "Weathrs API",
         version = "1.0.0",
-        description = "A streamlined Rust weather API using OpenWeatherMap. Provides current weather, forecasts, and scheduled notifications.",
+        description = "A streamlined Rust weather API using OpenWeatherMap. Provides current weather, forecasts, history, trends, and scheduled notifications.",
         license(
             name = "MIT",
             url = "https://opensource.org/licenses/MIT"
@@ -26,6 +30,7 @@ use crate::weather::service::WeatherResponse;
     tags(
         (name = "weather", description = "Current weather data"),
         (name = "forecast", description = "Weather forecasts (daily, hourly)"),
+        (name = "history", description = "Historical weather data and trends"),
         (name = "scheduler", description = "Scheduled forecast jobs"),
         (name = "devices", description = "Device registration for push notifications")
     ),
@@ -33,6 +38,13 @@ use crate::weather::service::WeatherResponse;
         schemas(
             ErrorResponse,
             WeatherResponse,
+            HistoryResponse,
+            HistoryDataPoint,
+            DailyHistoryResponse,
+            DailyHistorySummary,
+            TrendResponse,
+            TrendSummary,
+            TrendExtreme,
         )
     )
 )]

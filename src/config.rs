@@ -32,6 +32,10 @@ pub struct AppConfig {
     #[serde(default = "default_database_url")]
     pub database_url: String,
 
+    /// History data retention in days
+    #[serde(default = "default_history_retention_days")]
+    pub history_retention_days: u32,
+
     /// Display configuration
     #[serde(default)]
     pub display: DisplayConfig,
@@ -123,6 +127,10 @@ fn default_true() -> bool {
 
 fn default_false() -> bool {
     false
+}
+
+fn default_history_retention_days() -> u32 {
+    90
 }
 
 impl AppConfig {

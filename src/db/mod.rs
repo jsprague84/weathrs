@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod device_repo;
+pub mod history_repo;
 mod job_repo;
 
 pub use device_repo::{DeviceRepository, SqliteDeviceRepository};
@@ -60,10 +61,12 @@ pub async fn create_pool(config: &DbConfig) -> Result<SqlitePool, DbError> {
 
 /// Run database migrations
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), DbError> {
-    // Read and execute the migration SQL
-    let migration_sql = include_str!("../../migrations/001_create_tables.sql");
+    // Run migrations in order
+    let migration_001 = include_str!("../../migrations/001_create_tables.sql");
+    sqlx::raw_sql(migration_001).execute(pool).await?;
 
-    sqlx::raw_sql(migration_sql).execute(pool).await?;
+    let migration_002 = include_str!("../../migrations/002_create_history_table.sql");
+    sqlx::raw_sql(migration_002).execute(pool).await?;
 
     tracing::info!("Database migrations completed");
     Ok(())

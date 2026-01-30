@@ -6,6 +6,7 @@ use axum::{
 
 use crate::devices::handlers as devices_handlers;
 use crate::forecast::handlers as forecast_handlers;
+use crate::history::handlers as history_handlers;
 use crate::middleware::{require_api_key, DeviceApiKey};
 use crate::openapi::swagger_ui;
 use crate::scheduler::handlers as scheduler_handlers;
@@ -91,11 +92,23 @@ fn devices_routes(api_key: Option<String>) -> Router<AppState> {
         .layer(middleware::from_fn(require_api_key))
 }
 
+/// Build the history API routes
+fn history_routes() -> Router<AppState> {
+    Router::new()
+        .route("/history/{city}", get(history_handlers::get_history))
+        .route(
+            "/history/{city}/daily",
+            get(history_handlers::get_daily_history),
+        )
+        .route("/history/{city}/trends", get(history_handlers::get_trends))
+}
+
 /// Build all API v1 routes
 pub fn api_v1_routes(device_api_key: Option<String>) -> Router<AppState> {
     Router::new()
         .merge(weather_routes())
         .merge(forecast_routes())
+        .merge(history_routes())
         .merge(scheduler_routes())
         .merge(devices_routes(device_api_key))
 }
