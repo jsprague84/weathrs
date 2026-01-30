@@ -14,8 +14,9 @@ const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
 const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
 const TIMEMACHINE_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall/timemachine";
 
-/// Maximum number of API calls (days) per request to avoid OWM throttling
-const MAX_DAYS_PER_REQUEST: usize = 30;
+/// Maximum number of API calls (days) per request to avoid OWM throttling.
+/// Set to 90 to cover the maximum supported period (90d) in a single request.
+const MAX_DAYS_PER_REQUEST: usize = 90;
 
 /// Default history range: 7 days
 const DEFAULT_RANGE_DAYS: i64 = 7;
