@@ -76,6 +76,15 @@ pub trait HistoryRepository: Send + Sync {
         units: &str,
     ) -> Result<Vec<i64>, DbError>;
 
+    /// Find days (as midnight UTC timestamps) in a range that have no data
+    async fn get_missing_days(
+        &self,
+        city: &str,
+        start_ts: i64,
+        end_ts: i64,
+        units: &str,
+    ) -> Result<Vec<i64>, DbError>;
+
     /// Delete records older than the given timestamp
     async fn cleanup_old(&self, before_ts: i64) -> Result<usize, DbError>;
 }
@@ -154,6 +163,11 @@ struct DailySummaryDbRow {
 #[derive(sqlx::FromRow)]
 struct TimestampRow {
     timestamp: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct DateRow {
+    date_str: String,
 }
 
 #[async_trait]
@@ -327,6 +341,59 @@ impl HistoryRepository for SqliteHistoryRepository {
             .await?;
 
         Ok(result.rows_affected() as usize)
+    }
+
+    async fn get_missing_days(
+        &self,
+        city: &str,
+        start_ts: i64,
+        end_ts: i64,
+        units: &str,
+    ) -> Result<Vec<i64>, DbError> {
+        // Get distinct dates that have data
+        let rows: Vec<DateRow> = sqlx::query_as(
+            "SELECT DISTINCT date(timestamp, 'unixepoch') as date_str
+             FROM weather_history
+             WHERE city = ? AND timestamp >= ? AND timestamp <= ? AND units = ?",
+        )
+        .bind(city)
+        .bind(start_ts)
+        .bind(end_ts)
+        .bind(units)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let existing_dates: std::collections::HashSet<String> =
+            rows.into_iter().map(|r| r.date_str).collect();
+
+        // Generate expected days (midnight UTC) and find missing ones
+        // Align start to midnight UTC
+        let start_day = (start_ts / 86400) * 86400;
+        let end_day = (end_ts / 86400) * 86400;
+
+        let mut missing = Vec::new();
+        let mut day_ts = start_day;
+        let now_day = (chrono::Utc::now().timestamp() / 86400) * 86400;
+
+        while day_ts <= end_day {
+            // Skip today and future - OWM Timemachine only has past data
+            if day_ts >= now_day {
+                day_ts += 86400;
+                continue;
+            }
+
+            // Format as YYYY-MM-DD to check against existing
+            let date_str = chrono::DateTime::from_timestamp(day_ts, 0)
+                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                .unwrap_or_default();
+
+            if !existing_dates.contains(&date_str) {
+                missing.push(day_ts);
+            }
+            day_ts += 86400;
+        }
+
+        Ok(missing)
     }
 }
 

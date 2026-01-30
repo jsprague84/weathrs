@@ -14,14 +14,11 @@ const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
 const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
 const TIMEMACHINE_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall/timemachine";
 
-/// Maximum number of API calls per request to avoid OWM throttling
-const MAX_API_CALLS_PER_REQUEST: usize = 30;
+/// Maximum number of API calls (days) per request to avoid OWM throttling
+const MAX_DAYS_PER_REQUEST: usize = 30;
 
 /// Default history range: 7 days
 const DEFAULT_RANGE_DAYS: i64 = 7;
-
-/// Interval between data points (3 hours in seconds)
-const DATA_INTERVAL_SECS: i64 = 3 * 3600;
 
 #[derive(Error, Debug)]
 pub enum HistoryError {
@@ -353,7 +350,9 @@ impl HistoryService {
         })
     }
 
-    /// Fetch missing data from OWM Timemachine API and store in DB
+    /// Fetch missing data from OWM Timemachine API and store in DB.
+    /// OWM Timemachine returns all hourly data for a given UTC day, so we
+    /// identify which days are missing and fetch one API call per day.
     async fn backfill_data(
         &self,
         city: &str,
@@ -362,34 +361,36 @@ impl HistoryService {
         end_ts: i64,
         units: &str,
     ) -> Result<(), HistoryError> {
-        let missing = self
+        let missing_days = self
             .repo
-            .get_missing_timestamps(city, start_ts, end_ts, DATA_INTERVAL_SECS, units)
+            .get_missing_days(city, start_ts, end_ts, units)
             .await
             .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
 
-        if missing.is_empty() {
+        if missing_days.is_empty() {
             return Ok(());
         }
 
         tracing::debug!(
             city = %city,
-            missing_count = missing.len(),
+            missing_days = missing_days.len(),
             "Backfilling history data"
         );
 
-        // Limit API calls per request
-        let timestamps_to_fetch: Vec<i64> = missing
+        // Limit API calls per request (one call per day)
+        let days_to_fetch: Vec<i64> = missing_days
             .into_iter()
-            .take(MAX_API_CALLS_PER_REQUEST)
+            .take(MAX_DAYS_PER_REQUEST)
             .collect();
 
         let mut records = Vec::new();
         let now = chrono::Utc::now().timestamp();
 
-        for ts in &timestamps_to_fetch {
+        for day_ts in &days_to_fetch {
+            // Use noon UTC for the API call to ensure we get the right day
+            let fetch_ts = day_ts + 12 * 3600;
             match self
-                .fetch_timemachine(location.lat, location.lon, *ts, units)
+                .fetch_timemachine(location.lat, location.lon, fetch_ts, units)
                 .await
             {
                 Ok(data_points) => {
@@ -419,9 +420,9 @@ impl HistoryService {
                 Err(e) => {
                     tracing::warn!(
                         city = %city,
-                        timestamp = ts,
+                        day_ts = day_ts,
                         error = %e,
-                        "Failed to fetch timemachine data, skipping"
+                        "Failed to fetch timemachine data for day, skipping"
                     );
                 }
             }
