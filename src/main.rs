@@ -1,3 +1,5 @@
+mod api_budget;
+mod backfill;
 mod cache;
 mod config;
 mod db;
@@ -126,6 +128,11 @@ async fn main() -> anyhow::Result<()> {
     start_cache_cleanup_task(geo_cache.clone());
     tracing::debug!("Geocoding cache initialized");
 
+    // Create shared API call budget
+    let api_budget = Arc::new(api_budget::ApiCallBudget::new(
+        config.history_backfill.daily_budget,
+    ));
+
     // Initialize services with shared client
     let weather_service = Arc::new(WeatherService::new(
         http_client.clone(),
@@ -141,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
         &config.openweathermap_api_key,
         geo_cache,
         db_pool,
+        Arc::clone(&api_budget),
     ));
 
     // Initialize devices service for Expo push notifications
@@ -178,6 +186,18 @@ async fn main() -> anyhow::Result<()> {
         job_count = scheduler_service.get_jobs().await.len(),
         "Scheduler started"
     );
+
+    // Schedule history backfill job if enabled
+    if config.history_backfill.enabled {
+        backfill::schedule_backfill_job(
+            Arc::clone(&scheduler_service),
+            Arc::clone(&history_service),
+            Arc::clone(&devices_service),
+            config.history_backfill.clone(),
+            Arc::clone(&api_budget),
+        )
+        .await?;
+    }
 
     // Create shared application state
     let state = AppState {

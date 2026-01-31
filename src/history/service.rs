@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use axum::http::StatusCode;
 use reqwest::Client;
 use sqlx::SqlitePool;
 use thiserror::Error;
 
 use super::models::*;
+use crate::api_budget::ApiCallBudget;
 use crate::cache::{normalize_cache_key, CachedGeoLocation, GeoCache};
 use crate::db::history_repo::{HistoryRecord, HistoryRepository, SqliteHistoryRepository};
 use crate::error::HttpError;
@@ -73,20 +76,28 @@ pub struct HistoryService {
     api_key: String,
     geo_cache: GeoCache,
     repo: SqliteHistoryRepository,
+    api_budget: Arc<ApiCallBudget>,
 }
 
 impl HistoryService {
-    pub fn new(client: Client, api_key: &str, geo_cache: GeoCache, pool: SqlitePool) -> Self {
+    pub fn new(
+        client: Client,
+        api_key: &str,
+        geo_cache: GeoCache,
+        pool: SqlitePool,
+        api_budget: Arc<ApiCallBudget>,
+    ) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),
             geo_cache,
             repo: SqliteHistoryRepository::new(pool),
+            api_budget,
         }
     }
 
     /// Geocode a location string to coordinates (reuses ForecastService pattern)
-    async fn geocode(&self, location: &str) -> Result<GeoLocation, HistoryError> {
+    pub async fn geocode(&self, location: &str) -> Result<GeoLocation, HistoryError> {
         let cache_key = normalize_cache_key(location);
 
         if let Some(cached) = self.geo_cache.get(&cache_key) {
@@ -470,6 +481,8 @@ impl HistoryService {
         timestamp: i64,
         units: &str,
     ) -> Result<Vec<TimemachineData>, HistoryError> {
+        self.api_budget.record_call();
+
         let response = self
             .client
             .get(TIMEMACHINE_API_URL)
@@ -496,6 +509,77 @@ impl HistoryService {
 
         let data: TimemachineResponse = response.json().await?;
         Ok(data.data)
+    }
+
+    /// Get missing days for a city within a time range.
+    /// Returns midnight-UTC timestamps for days that have no data in the DB.
+    pub async fn get_missing_days(
+        &self,
+        city: &str,
+        start_ts: i64,
+        end_ts: i64,
+        units: &str,
+    ) -> Result<Vec<i64>, HistoryError> {
+        self.repo
+            .get_missing_days(city, start_ts, end_ts, units)
+            .await
+            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))
+    }
+
+    /// Fetch one day of history if API budget allows.
+    /// Returns `Some(count)` of inserted records, or `None` if budget is exhausted.
+    pub async fn fetch_day_if_budget(
+        &self,
+        city: &str,
+        location: &GeoLocation,
+        day_ts: i64,
+        units: &str,
+    ) -> Result<Option<usize>, HistoryError> {
+        if self.api_budget.remaining() == 0 {
+            return Ok(None);
+        }
+
+        let fetch_ts = day_ts + 12 * 3600; // noon UTC
+        let data_points = self
+            .fetch_timemachine(location.lat, location.lon, fetch_ts, units)
+            .await?;
+
+        let now = chrono::Utc::now().timestamp();
+        let records: Vec<HistoryRecord> = data_points
+            .into_iter()
+            .map(|dp| HistoryRecord {
+                city: city.to_string(),
+                lat: location.lat,
+                lon: location.lon,
+                timestamp: dp.dt,
+                temperature: dp.temp,
+                feels_like: dp.feels_like,
+                humidity: dp.humidity as i32,
+                pressure: dp.pressure as i32,
+                wind_speed: dp.wind_speed,
+                wind_direction: dp.wind_deg.map(|d| d as i32),
+                clouds: dp.clouds.map(|c| c as i32),
+                visibility: dp.visibility.map(|v| v as i32),
+                description: dp.weather.first().map(|w| w.description.clone()),
+                icon: dp.weather.first().map(|w| w.icon.clone()),
+                rain_1h: dp.rain.and_then(|r| r.one_hour),
+                snow_1h: dp.snow.and_then(|s| s.one_hour),
+                units: units.to_string(),
+                fetched_at: now,
+            })
+            .collect();
+
+        if records.is_empty() {
+            return Ok(Some(0));
+        }
+
+        let inserted = self
+            .repo
+            .insert_batch(&records)
+            .await
+            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
+
+        Ok(Some(inserted))
     }
 }
 

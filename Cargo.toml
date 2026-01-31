@@ -51,5 +51,8 @@ utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
+# Ordered sets
+indexmap = "2"
+
 # Async traits
 async-trait = "0.1"

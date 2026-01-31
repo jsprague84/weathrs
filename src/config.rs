@@ -43,6 +43,10 @@ pub struct AppConfig {
     /// Scheduled jobs configuration
     #[serde(default)]
     pub scheduler: SchedulerConfig,
+
+    /// History backfill configuration
+    #[serde(default)]
+    pub history_backfill: HistoryBackfillConfig,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -99,6 +103,53 @@ impl Default for DisplayConfig {
             visibility: false,
         }
     }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct HistoryBackfillConfig {
+    /// Whether daily history backfill is enabled
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Cron expression for the backfill job (default: 2:00 AM UTC daily)
+    #[serde(default = "default_backfill_cron")]
+    pub cron: String,
+
+    /// How many years of history to backfill
+    #[serde(default = "default_max_years")]
+    pub max_years: u32,
+
+    /// Maximum OWM API calls per day for backfill
+    #[serde(default = "default_daily_budget")]
+    pub daily_budget: u32,
+
+    /// Fallback cities to backfill when no devices/jobs are configured
+    #[serde(default)]
+    pub fallback_cities: Vec<String>,
+}
+
+impl Default for HistoryBackfillConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cron: default_backfill_cron(),
+            max_years: default_max_years(),
+            daily_budget: default_daily_budget(),
+            fallback_cities: Vec::new(),
+        }
+    }
+}
+
+fn default_backfill_cron() -> String {
+    "0 0 2 * * *".to_string()
+}
+
+fn default_max_years() -> u32 {
+    5
+}
+
+fn default_daily_budget() -> u32 {
+    1000
 }
 
 fn default_host() -> String {

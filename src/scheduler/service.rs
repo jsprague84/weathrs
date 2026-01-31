@@ -306,6 +306,16 @@ impl SchedulerService {
         self.storage.get_all().await
     }
 
+    /// Add a raw cron `Job` to the scheduler (used by system jobs like backfill).
+    pub async fn add_system_job(&self, job: Job) -> Result<Uuid, SchedulerError> {
+        let uuid = self
+            .scheduler
+            .add(job)
+            .await
+            .map_err(|e| SchedulerError::Scheduler(e.to_string()))?;
+        Ok(uuid)
+    }
+
     /// Run a job immediately (manual trigger) - sends to all devices subscribed to the city
     pub async fn run_now(&self, city: &str, units: &str) -> Result<()> {
         tracing::info!(city = %city, "Running manual forecast job");
