@@ -4,18 +4,18 @@ use reqwest::Client;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::db::{DbError, DeviceRepository, SqliteDeviceRepository};
 use crate::notifications::{ExpoClient, NotificationMessage, Priority};
 
 use super::models::{Device, DeviceRegistrationRequest, DeviceSettingsRequest};
-use super::storage::DeviceStorage;
 
 #[derive(Error, Debug)]
 pub enum DevicesError {
     #[error("Device not found")]
     NotFound,
 
-    #[error("Storage error: {0}")]
-    Storage(#[from] std::io::Error),
+    #[error("Database error: {0}")]
+    Database(#[from] DbError),
 
     #[error("Failed to send notification: {0}")]
     NotificationError(String),
@@ -23,27 +23,17 @@ pub enum DevicesError {
 
 /// Service for managing device registrations and sending push notifications
 pub struct DevicesService {
-    storage: DeviceStorage,
+    repo: SqliteDeviceRepository,
     expo_client: ExpoClient,
 }
 
 impl DevicesService {
-    /// Create a new devices service
-    pub fn new(client: Client, storage_path: impl Into<String>) -> Self {
+    /// Create a new devices service backed by SQLite
+    pub fn new(client: Client, pool: sqlx::SqlitePool) -> Self {
         Self {
-            storage: DeviceStorage::new(storage_path),
+            repo: SqliteDeviceRepository::new(pool),
             expo_client: ExpoClient::new(client),
         }
-    }
-
-    /// Initialize the service (load existing devices from storage)
-    pub async fn init(&self) -> Result<(), DevicesError> {
-        self.storage.load().await?;
-        tracing::info!(
-            count = self.storage.count().await,
-            "Devices service initialized"
-        );
-        Ok(())
     }
 
     /// Get current timestamp
@@ -62,7 +52,7 @@ impl DevicesService {
         let now = Self::now();
 
         // Check if device already exists
-        let device = if let Some(mut existing) = self.storage.get_by_token(&request.token).await {
+        let device = if let Some(mut existing) = self.repo.get_by_token(&request.token).await? {
             // Update existing device
             existing.platform = request.platform;
             existing.device_name = request.device_name;
@@ -88,7 +78,7 @@ impl DevicesService {
             }
         };
 
-        self.storage.upsert(device.clone()).await?;
+        self.repo.upsert(&device).await?;
 
         tracing::info!(
             device_id = %device.id,
@@ -101,7 +91,7 @@ impl DevicesService {
 
     /// Unregister a device
     pub async fn unregister(&self, token: &str) -> Result<bool, DevicesError> {
-        let removed = self.storage.remove(token).await?;
+        let removed = self.repo.remove(token).await?;
 
         if removed {
             tracing::info!("Device unregistered");
@@ -116,9 +106,9 @@ impl DevicesService {
         request: DeviceSettingsRequest,
     ) -> Result<Device, DevicesError> {
         let mut device = self
-            .storage
+            .repo
             .get_by_token(&request.token)
-            .await
+            .await?
             .ok_or(DevicesError::NotFound)?;
 
         if let Some(enabled) = request.enabled {
@@ -132,7 +122,7 @@ impl DevicesService {
         }
         device.updated_at = Self::now();
 
-        self.storage.upsert(device.clone()).await?;
+        self.repo.upsert(&device).await?;
 
         tracing::info!(device_id = %device.id, "Device settings updated");
 
@@ -141,17 +131,26 @@ impl DevicesService {
 
     /// Get a device by token
     pub async fn get_by_token(&self, token: &str) -> Option<Device> {
-        self.storage.get_by_token(token).await
+        self.repo.get_by_token(token).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to get device by token");
+            None
+        })
     }
 
     /// Get all devices
     pub async fn get_all(&self) -> Vec<Device> {
-        self.storage.get_all().await
+        self.repo.get_all().await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to get all devices");
+            Vec::new()
+        })
     }
 
     /// Get device count
     pub async fn count(&self) -> usize {
-        self.storage.count().await
+        self.repo.count().await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to get device count");
+            0
+        })
     }
 
     /// Send a test notification to a device
@@ -174,7 +173,7 @@ impl DevicesService {
 
     /// Send a notification to all enabled devices
     pub async fn broadcast(&self, message: &NotificationMessage) -> Result<usize, DevicesError> {
-        let devices = self.storage.get_enabled().await;
+        let devices = self.repo.get_enabled().await?;
 
         if devices.is_empty() {
             tracing::debug!("No enabled devices to broadcast to");
@@ -201,7 +200,7 @@ impl DevicesService {
         city: &str,
         message: &NotificationMessage,
     ) -> Result<usize, DevicesError> {
-        let devices = self.storage.get_by_city(city).await;
+        let devices = self.repo.get_by_city(city).await?;
 
         if devices.is_empty() {
             tracing::debug!(city = %city, "No devices subscribed to city");

@@ -147,24 +147,23 @@ async fn main() -> anyhow::Result<()> {
         http_client.clone(),
         &config.openweathermap_api_key,
         geo_cache,
-        db_pool,
+        db_pool.clone(),
         Arc::clone(&api_budget),
     ));
 
-    // Initialize devices service for Expo push notifications
+    // Initialize devices service backed by SQLite
     let devices_service = Arc::new(DevicesService::new(
         http_client.clone(),
-        "data/devices.json",
+        db_pool.clone(),
     ));
-    devices_service.init().await?;
     tracing::info!("Devices service initialized");
 
-    // Initialize scheduler with persistent storage
+    // Initialize scheduler backed by SQLite
     let scheduler_service = Arc::new(
         SchedulerService::new(
             Arc::clone(&forecast_service),
             Arc::clone(&devices_service),
-            "data/scheduler_jobs.json",
+            db_pool,
         )
         .await?,
     );

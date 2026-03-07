@@ -6,12 +6,12 @@ use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobBuilder, JobScheduler};
 use uuid::Uuid;
 
+use crate::db::{DbError, JobRepository, SqliteJobRepository};
 use crate::devices::DevicesService;
 use crate::forecast::ForecastService;
 use crate::notifications::{NotificationMessage, Priority};
 
 use super::jobs::{ForecastJob, JobConfig};
-use super::storage::JobStorage;
 
 #[derive(Error, Debug)]
 pub enum SchedulerError {
@@ -24,8 +24,8 @@ pub enum SchedulerError {
     #[error("Invalid timezone: {0}")]
     InvalidTimezone(String),
 
-    #[error("Storage error: {0}")]
-    Storage(#[from] std::io::Error),
+    #[error("Database error: {0}")]
+    Database(#[from] DbError),
 
     #[error("Scheduler error: {0}")]
     Scheduler(String),
@@ -38,42 +38,41 @@ pub struct SchedulerService {
     devices_service: Arc<DevicesService>,
     /// Maps our job IDs to scheduler's internal UUIDs
     job_uuids: Arc<RwLock<HashMap<String, Uuid>>>,
-    /// Persistent storage for jobs
-    storage: JobStorage,
+    /// SQLite repository for jobs
+    repo: SqliteJobRepository,
 }
 
 impl SchedulerService {
     pub async fn new(
         forecast_service: Arc<ForecastService>,
         devices_service: Arc<DevicesService>,
-        storage_path: &str,
+        pool: sqlx::SqlitePool,
     ) -> Result<Self> {
         let scheduler = JobScheduler::new().await?;
-        let storage = JobStorage::new(storage_path);
+        let repo = SqliteJobRepository::new(pool);
 
         Ok(Self {
             scheduler,
             forecast_service,
             devices_service,
             job_uuids: Arc::new(RwLock::new(HashMap::new())),
-            storage,
+            repo,
         })
     }
 
-    /// Initialize storage and load persisted jobs
+    /// Initialize: load persisted jobs from SQLite and schedule them
     pub async fn init(&self) -> Result<(), SchedulerError> {
-        self.storage.load().await?;
-
-        // Load all enabled jobs from storage
-        let jobs = self.storage.get_enabled().await;
+        // Load all enabled jobs from SQLite
+        let jobs = self.repo.get_enabled().await?;
         for job in jobs {
             if let Err(e) = self.schedule_job(&job).await {
                 tracing::error!(job_id = %job.id, error = %e, "Failed to schedule job from storage");
             }
         }
 
+        let count = self.repo.count().await.unwrap_or(0);
         tracing::info!(
-            count = self.storage.count().await,
+            count = count,
             "Scheduler initialized with stored jobs"
         );
         Ok(())
@@ -90,7 +89,8 @@ impl SchedulerService {
     pub async fn load_jobs(&self, config: &JobConfig) -> Result<()> {
         for job in &config.jobs {
             // Only add if not already in storage
-            if !self.storage.exists(&job.id).await {
+            let exists = self.repo.exists(&job.id).await.unwrap_or(false);
+            if !exists {
                 if let Err(e) = self.create_job(job.clone()).await {
                     tracing::error!(job_id = %job.id, error = %e, "Failed to load job from config");
                 }
@@ -237,8 +237,8 @@ impl SchedulerService {
             return Err(SchedulerError::InvalidTimezone(job.timezone.clone()));
         }
 
-        // Save to storage
-        self.storage.upsert(job.clone()).await?;
+        // Save to SQLite
+        self.repo.upsert(&job).await?;
 
         // Schedule if enabled
         if job.enabled {
@@ -252,7 +252,8 @@ impl SchedulerService {
     /// Update an existing job
     pub async fn update_job(&self, job: ForecastJob) -> Result<ForecastJob, SchedulerError> {
         // Check if job exists
-        if !self.storage.exists(&job.id).await {
+        let exists = self.repo.exists(&job.id).await?;
+        if !exists {
             return Err(SchedulerError::NotFound(job.id.clone()));
         }
 
@@ -269,8 +270,8 @@ impl SchedulerService {
         // Unschedule old job
         self.unschedule_job(&job.id).await?;
 
-        // Save updated job
-        self.storage.upsert(job.clone()).await?;
+        // Save updated job to SQLite
+        self.repo.upsert(&job).await?;
 
         // Reschedule if enabled
         if job.enabled {
@@ -286,8 +287,8 @@ impl SchedulerService {
         // Unschedule first
         self.unschedule_job(job_id).await?;
 
-        // Remove from storage
-        let removed = self.storage.remove(job_id).await?;
+        // Remove from SQLite
+        let removed = self.repo.remove(job_id).await?;
 
         if removed {
             tracing::info!(job_id = %job_id, "Deleted job");
@@ -298,12 +299,18 @@ impl SchedulerService {
 
     /// Get a job by ID
     pub async fn get_job(&self, job_id: &str) -> Option<ForecastJob> {
-        self.storage.get(job_id).await
+        self.repo.get(job_id).await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to get job");
+            None
+        })
     }
 
     /// Get all configured jobs
     pub async fn get_jobs(&self) -> Vec<ForecastJob> {
-        self.storage.get_all().await
+        self.repo.get_all().await.unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to get all jobs");
+            Vec::new()
+        })
     }
 
     /// Add a raw cron `Job` to the scheduler (used by system jobs like backfill).

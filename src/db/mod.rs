@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod device_repo;
 pub mod history_repo;
 mod job_repo;
@@ -72,7 +70,8 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), DbError> {
     Ok(())
 }
 
-/// Import devices from JSON file to SQLite
+/// Import devices from JSON file to SQLite (one-time migration helper)
+#[allow(dead_code)]
 pub async fn import_devices_from_json(
     pool: &SqlitePool,
     json_path: &str,
@@ -116,7 +115,8 @@ pub async fn import_devices_from_json(
     Ok(imported)
 }
 
-/// Import scheduler jobs from JSON file to SQLite
+/// Import scheduler jobs from JSON file to SQLite (one-time migration helper)
+#[allow(dead_code)]
 pub async fn import_jobs_from_json(pool: &SqlitePool, json_path: &str) -> Result<usize, DbError> {
     use crate::scheduler::ForecastJob;
 
