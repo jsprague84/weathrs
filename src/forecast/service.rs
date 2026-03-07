@@ -106,16 +106,18 @@ impl ForecastService {
         }?;
 
         // Cache the result (memory + SQLite)
-        self.geo_cache.insert(
-            cache_key,
-            CachedGeoLocation {
-                name: result.name.clone(),
-                lat: result.lat,
-                lon: result.lon,
-                country: result.country.clone(),
-                state: result.state.clone(),
-            },
-        ).await;
+        self.geo_cache
+            .insert(
+                cache_key,
+                CachedGeoLocation {
+                    name: result.name.clone(),
+                    lat: result.lat,
+                    lon: result.lon,
+                    country: result.country.clone(),
+                    state: result.state.clone(),
+                },
+            )
+            .await;
 
         Ok(result)
     }
@@ -406,6 +408,16 @@ impl ForecastService {
 mod tests {
     use super::*;
 
+    async fn test_geo_cache() -> crate::cache::GeoCache {
+        let pool = crate::db::create_pool(&crate::db::DbConfig {
+            url: "sqlite::memory:".to_string(),
+            max_connections: 1,
+        })
+        .await
+        .unwrap();
+        crate::cache::create_geo_cache(pool)
+    }
+
     #[test]
     fn test_is_zip_code_us_numeric() {
         assert!(ForecastService::is_zip_code("60601"));
@@ -474,9 +486,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_transform_response_minimal() {
-        let geo_cache = crate::cache::create_geo_cache();
+    #[tokio::test]
+    async fn test_transform_response_minimal() {
+        let geo_cache = test_geo_cache().await;
         let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
 
         let data = create_minimal_one_call_response();
@@ -492,9 +504,9 @@ mod tests {
         assert!(result.alerts.is_empty());
     }
 
-    #[test]
-    fn test_transform_response_with_current_weather() {
-        let geo_cache = crate::cache::create_geo_cache();
+    #[tokio::test]
+    async fn test_transform_response_with_current_weather() {
+        let geo_cache = test_geo_cache().await;
         let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
 
         let mut data = create_minimal_one_call_response();
@@ -532,9 +544,9 @@ mod tests {
         assert_eq!(current.icon, "01d");
     }
 
-    #[test]
-    fn test_transform_response_with_alerts() {
-        let geo_cache = crate::cache::create_geo_cache();
+    #[tokio::test]
+    async fn test_transform_response_with_alerts() {
+        let geo_cache = test_geo_cache().await;
         let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
 
         let mut data = create_minimal_one_call_response();

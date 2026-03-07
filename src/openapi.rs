@@ -1,13 +1,13 @@
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::air_quality::models::{AirQualityComponents, AirQualityResponse};
 use crate::error::ErrorResponse;
+use crate::forecast::models::WidgetResponse;
 use crate::history::models::{
     DailyHistoryResponse, DailyHistorySummary, HistoryDataPoint, HistoryResponse, TrendExtreme,
     TrendResponse, TrendSummary,
 };
-use crate::air_quality::models::{AirQualityComponents, AirQualityResponse};
-use crate::forecast::models::WidgetResponse;
 use crate::weather::service::WeatherResponse;
 
 /// OpenAPI documentation for the Weathrs API

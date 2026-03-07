@@ -5,7 +5,9 @@ use axum::{
     routing::{get, post, put},
     Extension, Router,
 };
-use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer};
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
+};
 
 use crate::air_quality::handlers as air_quality_handlers;
 use crate::config::RateLimitConfig;
@@ -67,25 +69,15 @@ fn scheduler_routes(rate_limit: &RateLimitConfig) -> Router<AppState> {
             "/scheduler/status",
             get(scheduler_handlers::scheduler_status),
         )
-        .route(
-            "/scheduler/jobs",
-            get(scheduler_handlers::list_jobs),
-        )
-        .route(
-            "/scheduler/jobs/{id}",
-            get(scheduler_handlers::get_job),
-        );
+        .route("/scheduler/jobs", get(scheduler_handlers::list_jobs))
+        .route("/scheduler/jobs/{id}", get(scheduler_handlers::get_job));
 
     // Mutation endpoints (stricter rate limit)
     let mutation_routes = Router::new()
-        .route(
-            "/scheduler/jobs",
-            post(scheduler_handlers::create_job),
-        )
+        .route("/scheduler/jobs", post(scheduler_handlers::create_job))
         .route(
             "/scheduler/jobs/{id}",
-            put(scheduler_handlers::update_job)
-                .delete(scheduler_handlers::delete_job),
+            put(scheduler_handlers::update_job).delete(scheduler_handlers::delete_job),
         )
         .route(
             "/scheduler/trigger",
@@ -124,11 +116,10 @@ fn devices_routes(api_key: Option<String>) -> Router<AppState> {
 
 /// Build the air quality API routes
 fn air_quality_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/air-quality/{city}",
-            get(air_quality_handlers::get_air_quality),
-        )
+    Router::new().route(
+        "/air-quality/{city}",
+        get(air_quality_handlers::get_air_quality),
+    )
 }
 
 /// Build the history API routes
@@ -143,7 +134,10 @@ fn history_routes() -> Router<AppState> {
 }
 
 /// Build all API v1 routes
-pub fn api_v1_routes(device_api_key: Option<String>, rate_limit: &RateLimitConfig) -> Router<AppState> {
+pub fn api_v1_routes(
+    device_api_key: Option<String>,
+    rate_limit: &RateLimitConfig,
+) -> Router<AppState> {
     Router::new()
         .merge(weather_routes())
         .merge(forecast_routes())
@@ -177,8 +171,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         // API v1 routes with general rate limiting
         .nest(
             "/api/v1",
-            api_v1_routes(device_api_key, &rate_limit)
-                .layer(GovernorLayer::new(general_config)),
+            api_v1_routes(device_api_key, &rate_limit).layer(GovernorLayer::new(general_config)),
         )
         // Swagger UI for API documentation
         .merge(swagger_ui())

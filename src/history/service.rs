@@ -122,16 +122,18 @@ impl HistoryService {
             self.geocode_city(location).await
         }?;
 
-        self.geo_cache.insert(
-            cache_key,
-            CachedGeoLocation {
-                name: result.name.clone(),
-                lat: result.lat,
-                lon: result.lon,
-                country: result.country.clone(),
-                state: result.state.clone(),
-            },
-        ).await;
+        self.geo_cache
+            .insert(
+                cache_key,
+                CachedGeoLocation {
+                    name: result.name.clone(),
+                    lat: result.lat,
+                    lon: result.lon,
+                    country: result.country.clone(),
+                    state: result.state.clone(),
+                },
+            )
+            .await;
 
         Ok(result)
     }

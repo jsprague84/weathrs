@@ -40,6 +40,7 @@ pub struct DailySummaryRow {
 }
 
 /// Repository trait for weather history operations
+#[allow(dead_code)]
 #[async_trait]
 pub trait HistoryRepository: Send + Sync {
     /// Get history records for a city within a time range
@@ -160,6 +161,7 @@ struct DailySummaryDbRow {
     dominant_condition: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(sqlx::FromRow)]
 struct TimestampRow {
     timestamp: i64,

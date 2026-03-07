@@ -60,6 +60,7 @@ where
     }
 
     /// Check if the cache is empty
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -189,7 +190,10 @@ impl GeoCacheWithDb {
             Ok(result) => {
                 let deleted = result.rows_affected();
                 if deleted > 0 {
-                    tracing::debug!(deleted = deleted, "Geocoding SQLite cache cleanup completed");
+                    tracing::debug!(
+                        deleted = deleted,
+                        "Geocoding SQLite cache cleanup completed"
+                    );
                 }
             }
             Err(e) => {

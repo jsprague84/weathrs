@@ -6,6 +6,7 @@ use crate::devices::{Device, Platform};
 use super::DbError;
 
 /// Repository trait for device operations
+#[allow(dead_code)]
 #[async_trait]
 pub trait DeviceRepository: Send + Sync {
     /// Get a device by its token

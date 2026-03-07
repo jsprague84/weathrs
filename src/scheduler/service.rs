@@ -71,10 +71,7 @@ impl SchedulerService {
         }
 
         let count = self.repo.count().await.unwrap_or(0);
-        tracing::info!(
-            count = count,
-            "Scheduler initialized with stored jobs"
-        );
+        tracing::info!(count = count, "Scheduler initialized with stored jobs");
         Ok(())
     }
 
