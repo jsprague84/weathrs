@@ -45,6 +45,7 @@ fn forecast_routes() -> Router<AppState> {
             "/forecast/hourly/{city}",
             get(forecast_handlers::get_hourly_forecast),
         )
+        .route("/widget/{city}", get(forecast_handlers::get_widget))
 }
 
 /// Build the scheduler API routes with separate rate limits for reads vs mutations

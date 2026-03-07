@@ -271,6 +271,19 @@ pub struct DailyForecastResponse {
     pub icon: String,
 }
 
+/// Minimal response optimized for home screen widgets
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WidgetResponse {
+    pub city: String,
+    pub temperature: f64,
+    pub high: f64,
+    pub low: f64,
+    pub icon: String,
+    pub description: String,
+    pub units: String,
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AlertResponse {
     pub sender: String,
