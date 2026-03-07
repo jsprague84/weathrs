@@ -41,6 +41,7 @@ const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 90;
 #[derive(Clone)]
 pub struct AppState {
     pub http_client: Client,
+    pub db_pool: sqlx::SqlitePool,
     pub weather_service: Arc<WeatherService>,
     pub forecast_service: Arc<ForecastService>,
     pub history_service: Arc<HistoryService>,
@@ -166,7 +167,7 @@ async fn main() -> anyhow::Result<()> {
         SchedulerService::new(
             Arc::clone(&forecast_service),
             Arc::clone(&devices_service),
-            db_pool,
+            db_pool.clone(),
         )
         .await?,
     );
@@ -204,6 +205,7 @@ async fn main() -> anyhow::Result<()> {
     // Create shared application state
     let state = AppState {
         http_client,
+        db_pool,
         weather_service,
         forecast_service,
         history_service,

@@ -161,6 +161,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         // Health check at root level (no rate limit)
         .route("/", get(weather_handlers::health))
         .route("/health", get(weather_handlers::health))
+        .route("/health/deep", get(weather_handlers::health_deep))
         // API v1 routes with general rate limiting
         .nest(
             "/api/v1",
