@@ -26,6 +26,11 @@ units = "metric"  # metric, imperial, or standard
 # Default: sqlite:data/weathrs.db
 # database_url = "sqlite:data/weathrs.db"
 
+# Rate limiting (per IP address)
+[rate_limit]
+general_rpm = 60      # Requests per minute for general endpoints
+mutation_rpm = 10     # Requests per minute for mutation endpoints (POST/PUT/DELETE)
+
 # Display configuration - what to show in weather response
 [display]
 temperature = true

@@ -47,6 +47,10 @@ pub struct AppConfig {
     /// History backfill configuration
     #[serde(default)]
     pub history_backfill: HistoryBackfillConfig,
+
+    /// Rate limiting configuration
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -138,6 +142,34 @@ impl Default for HistoryBackfillConfig {
             fallback_cities: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct RateLimitConfig {
+    /// Requests per minute for general endpoints (default: 60)
+    #[serde(default = "default_general_rpm")]
+    pub general_rpm: u32,
+
+    /// Requests per minute for mutation endpoints (POST/PUT/DELETE on scheduler) (default: 10)
+    #[serde(default = "default_mutation_rpm")]
+    pub mutation_rpm: u32,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            general_rpm: default_general_rpm(),
+            mutation_rpm: default_mutation_rpm(),
+        }
+    }
+}
+
+fn default_general_rpm() -> u32 {
+    60
+}
+
+fn default_mutation_rpm() -> u32 {
+    10
 }
 
 fn default_backfill_cron() -> String {

@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use axum::{
     middleware,
     routing::{get, post, put},
     Extension, Router,
 };
+use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer};
 
+use crate::config::RateLimitConfig;
 use crate::devices::handlers as devices_handlers;
 use crate::forecast::handlers as forecast_handlers;
 use crate::history::handlers as history_handlers;
@@ -43,21 +47,42 @@ fn forecast_routes() -> Router<AppState> {
         )
 }
 
-/// Build the scheduler API routes
-fn scheduler_routes() -> Router<AppState> {
-    Router::new()
+/// Build the scheduler API routes with separate rate limits for reads vs mutations
+fn scheduler_routes(rate_limit: &RateLimitConfig) -> Router<AppState> {
+    let mutation_config = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(rate_limit.mutation_rpm as u64 / 60 + 1)
+            .burst_size(rate_limit.mutation_rpm)
+            .key_extractor(SmartIpKeyExtractor)
+            .use_headers()
+            .finish()
+            .unwrap(),
+    );
+
+    // Read endpoints (use general rate limit applied at router level)
+    let read_routes = Router::new()
         .route(
             "/scheduler/status",
             get(scheduler_handlers::scheduler_status),
         )
         .route(
             "/scheduler/jobs",
-            get(scheduler_handlers::list_jobs).post(scheduler_handlers::create_job),
+            get(scheduler_handlers::list_jobs),
         )
         .route(
             "/scheduler/jobs/{id}",
-            get(scheduler_handlers::get_job)
-                .put(scheduler_handlers::update_job)
+            get(scheduler_handlers::get_job),
+        );
+
+    // Mutation endpoints (stricter rate limit)
+    let mutation_routes = Router::new()
+        .route(
+            "/scheduler/jobs",
+            post(scheduler_handlers::create_job),
+        )
+        .route(
+            "/scheduler/jobs/{id}",
+            put(scheduler_handlers::update_job)
                 .delete(scheduler_handlers::delete_job),
         )
         .route(
@@ -68,6 +93,9 @@ fn scheduler_routes() -> Router<AppState> {
             "/scheduler/trigger/{city}",
             post(scheduler_handlers::trigger_forecast_by_city),
         )
+        .layer(GovernorLayer::new(mutation_config));
+
+    read_routes.merge(mutation_routes)
 }
 
 /// Build the devices API routes (protected by API key auth)
@@ -104,24 +132,41 @@ fn history_routes() -> Router<AppState> {
 }
 
 /// Build all API v1 routes
-pub fn api_v1_routes(device_api_key: Option<String>) -> Router<AppState> {
+pub fn api_v1_routes(device_api_key: Option<String>, rate_limit: &RateLimitConfig) -> Router<AppState> {
     Router::new()
         .merge(weather_routes())
         .merge(forecast_routes())
         .merge(history_routes())
-        .merge(scheduler_routes())
+        .merge(scheduler_routes(rate_limit))
         .merge(devices_routes(device_api_key))
 }
 
 /// Build the complete application router
 pub fn build_router(state: AppState) -> Router<AppState> {
     let device_api_key = state.config.device_api_key.clone();
+    let rate_limit = state.config.rate_limit.clone();
+
+    // General rate limit for all API routes
+    let general_config = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(rate_limit.general_rpm as u64 / 60 + 1)
+            .burst_size(rate_limit.general_rpm)
+            .key_extractor(SmartIpKeyExtractor)
+            .use_headers()
+            .finish()
+            .unwrap(),
+    );
+
     Router::new()
-        // Health check at root level
+        // Health check at root level (no rate limit)
         .route("/", get(weather_handlers::health))
         .route("/health", get(weather_handlers::health))
-        // API v1 routes
-        .nest("/api/v1", api_v1_routes(device_api_key))
+        // API v1 routes with general rate limiting
+        .nest(
+            "/api/v1",
+            api_v1_routes(device_api_key, &rate_limit)
+                .layer(GovernorLayer::new(general_config)),
+        )
         // Swagger UI for API documentation
         .merge(swagger_ui())
 }
