@@ -24,6 +24,12 @@ const MAX_DAYS_PER_REQUEST: usize = 90;
 /// Default history range: 7 days
 const DEFAULT_RANGE_DAYS: i64 = 7;
 
+/// Maximum date range for hourly history requests: 90 days
+const MAX_HOURLY_RANGE_DAYS: i64 = 90;
+
+/// Maximum date range for daily history requests: 365 days
+const MAX_DAILY_RANGE_DAYS: i64 = 365;
+
 #[derive(Error, Debug)]
 pub enum HistoryError {
     #[error("Failed to fetch data: {0}")]
@@ -200,11 +206,7 @@ impl HistoryService {
         let end_ts = end.unwrap_or(now);
         let start_ts = start.unwrap_or(end_ts - DEFAULT_RANGE_DAYS * 86400);
 
-        if start_ts >= end_ts {
-            return Err(HistoryError::InvalidDateRange(
-                "start must be before end".to_string(),
-            ));
-        }
+        validate_date_range(start_ts, end_ts, now, MAX_HOURLY_RANGE_DAYS)?;
 
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
@@ -261,11 +263,7 @@ impl HistoryService {
         let end_ts = end.unwrap_or(now);
         let start_ts = start.unwrap_or(end_ts - DEFAULT_RANGE_DAYS * 86400);
 
-        if start_ts >= end_ts {
-            return Err(HistoryError::InvalidDateRange(
-                "start must be before end".to_string(),
-            ));
-        }
+        validate_date_range(start_ts, end_ts, now, MAX_DAILY_RANGE_DAYS)?;
 
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
@@ -679,6 +677,36 @@ fn compute_trend_direction(days: &[DailyHistorySummary]) -> String {
 
 fn round_2(val: f64) -> f64 {
     (val * 100.0).round() / 100.0
+}
+
+/// Validate a date range for history queries
+fn validate_date_range(
+    start_ts: i64,
+    end_ts: i64,
+    now: i64,
+    max_days: i64,
+) -> Result<(), HistoryError> {
+    if start_ts >= end_ts {
+        return Err(HistoryError::InvalidDateRange(
+            "start must be before end".to_string(),
+        ));
+    }
+
+    if start_ts > now || end_ts > now + 60 {
+        return Err(HistoryError::InvalidDateRange(
+            "timestamps must be in the past".to_string(),
+        ));
+    }
+
+    let range_days = (end_ts - start_ts) / 86400;
+    if range_days > max_days {
+        return Err(HistoryError::InvalidDateRange(format!(
+            "date range cannot exceed {} days (requested {} days)",
+            max_days, range_days
+        )));
+    }
+
+    Ok(())
 }
 
 fn format_period(start_ts: i64, end_ts: i64) -> String {
