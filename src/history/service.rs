@@ -100,7 +100,7 @@ impl HistoryService {
     pub async fn geocode(&self, location: &str) -> Result<GeoLocation, HistoryError> {
         let cache_key = normalize_cache_key(location);
 
-        if let Some(cached) = self.geo_cache.get(&cache_key) {
+        if let Some(cached) = self.geo_cache.get(&cache_key).await {
             return Ok(GeoLocation {
                 name: cached.name,
                 lat: cached.lat,
@@ -125,7 +125,7 @@ impl HistoryService {
                 country: result.country.clone(),
                 state: result.state.clone(),
             },
-        );
+        ).await;
 
         Ok(result)
     }

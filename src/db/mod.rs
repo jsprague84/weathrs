@@ -66,6 +66,9 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), DbError> {
     let migration_002 = include_str!("../../migrations/002_create_history_table.sql");
     sqlx::raw_sql(migration_002).execute(pool).await?;
 
+    let migration_003 = include_str!("../../migrations/003_create_geocoding_cache.sql");
+    sqlx::raw_sql(migration_003).execute(pool).await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

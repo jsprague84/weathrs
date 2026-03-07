@@ -84,8 +84,8 @@ impl ForecastService {
     pub async fn geocode(&self, location: &str) -> Result<GeoLocation, ForecastError> {
         let cache_key = normalize_cache_key(location);
 
-        // Check cache first
-        if let Some(cached) = self.geo_cache.get(&cache_key) {
+        // Check cache first (memory + SQLite)
+        if let Some(cached) = self.geo_cache.get(&cache_key).await {
             tracing::debug!(location = %location, "Geocoding cache hit");
             return Ok(GeoLocation {
                 name: cached.name,
@@ -105,7 +105,7 @@ impl ForecastService {
             self.geocode_city(location).await
         }?;
 
-        // Cache the result
+        // Cache the result (memory + SQLite)
         self.geo_cache.insert(
             cache_key,
             CachedGeoLocation {
@@ -115,7 +115,7 @@ impl ForecastService {
                 country: result.country.clone(),
                 state: result.state.clone(),
             },
-        );
+        ).await;
 
         Ok(result)
     }

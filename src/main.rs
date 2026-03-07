@@ -124,8 +124,8 @@ async fn main() -> anyhow::Result<()> {
     db::run_migrations(&db_pool).await?;
     tracing::info!("Database initialized");
 
-    // Create geocoding cache with 24-hour TTL
-    let geo_cache = create_geo_cache();
+    // Create geocoding cache with in-memory TTL + SQLite persistence
+    let geo_cache = create_geo_cache(db_pool.clone());
     start_cache_cleanup_task(geo_cache.clone());
     tracing::debug!("Geocoding cache initialized");
 
