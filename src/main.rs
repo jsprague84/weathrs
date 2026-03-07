@@ -31,9 +31,6 @@ use crate::history::HistoryService;
 use crate::scheduler::{JobConfig, SchedulerService};
 use crate::weather::WeatherService;
 
-/// Shared HTTP client configuration
-const HTTP_TIMEOUT_SECS: u64 = 30;
-const HTTP_CONNECT_TIMEOUT_SECS: u64 = 5;
 const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 90;
 
 #[derive(Clone)]
@@ -48,10 +45,10 @@ pub struct AppState {
 }
 
 /// Create shared HTTP client with connection pooling
-fn create_http_client() -> Result<Client, reqwest::Error> {
+fn create_http_client(config: &AppConfig) -> Result<Client, reqwest::Error> {
     Client::builder()
-        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
-        .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(config.request_timeout_secs))
+        .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
         .pool_idle_timeout(Duration::from_secs(HTTP_POOL_IDLE_TIMEOUT_SECS))
         .pool_max_idle_per_host(10)
         .build()
@@ -112,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Configuration loaded successfully");
 
     // Create shared HTTP client with connection pooling
-    let http_client = create_http_client()?;
+    let http_client = create_http_client(&config)?;
     tracing::debug!("Shared HTTP client created");
 
     // Initialize database
@@ -216,8 +213,8 @@ async fn main() -> anyhow::Result<()> {
             ServiceBuilder::new()
                 // Handle timeout errors
                 .layer(HandleErrorLayer::new(handle_timeout_error))
-                // Request timeout (60 seconds for slow API calls)
-                .timeout(Duration::from_secs(60)),
+                // Request timeout (configurable)
+                .timeout(Duration::from_secs(config.request_timeout_secs)),
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state);

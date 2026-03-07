@@ -51,6 +51,14 @@ pub struct AppConfig {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+
+    /// HTTP request timeout in seconds (tower layer)
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+
+    /// HTTP connect timeout in seconds (reqwest client)
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -170,6 +178,14 @@ fn default_general_rpm() -> u32 {
 
 fn default_mutation_rpm() -> u32 {
     10
+}
+
+fn default_request_timeout_secs() -> u64 {
+    60
+}
+
+fn default_connect_timeout_secs() -> u64 {
+    5
 }
 
 fn default_backfill_cron() -> String {

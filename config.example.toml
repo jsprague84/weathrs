@@ -26,6 +26,10 @@ units = "metric"  # metric, imperial, or standard
 # Default: sqlite:data/weathrs.db
 # database_url = "sqlite:data/weathrs.db"
 
+# Timeout configuration
+# request_timeout_secs = 60   # Overall request timeout (tower layer)
+# connect_timeout_secs = 5    # HTTP connect timeout (reqwest client)
+
 # Rate limiting (per IP address)
 [rate_limit]
 general_rpm = 60      # Requests per minute for general endpoints
