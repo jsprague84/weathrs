@@ -15,11 +15,16 @@ mod routes;
 mod scheduler;
 mod weather;
 
-use axum::{error_handling::HandleErrorLayer, http::StatusCode, BoxError};
+use axum::{
+    error_handling::HandleErrorLayer,
+    http::{self, Method, StatusCode},
+    BoxError,
+};
 use reqwest::Client;
 use std::net::SocketAddr;
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -207,8 +212,34 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config.clone()),
     };
 
+    // Build CORS layer
+    let cors = if config.cors_allowed_origins.is_empty() {
+        CorsLayer::permissive()
+    } else {
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(
+                config
+                    .cors_allowed_origins
+                    .iter()
+                    .filter_map(|o| o.parse().ok()),
+            ))
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([
+                http::header::CONTENT_TYPE,
+                http::header::HeaderName::from_static("x-api-key"),
+                http::header::AUTHORIZATION,
+            ])
+    };
+
     // Build router using the routes module
     let app = routes::build_router(state.clone())
+        .layer(cors)
         .layer(
             ServiceBuilder::new()
                 // Handle timeout errors

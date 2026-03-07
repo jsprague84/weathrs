@@ -59,6 +59,10 @@ pub struct AppConfig {
     /// HTTP connect timeout in seconds (reqwest client)
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u64,
+
+    /// CORS allowed origins (empty = allow all)
+    #[serde(default)]
+    pub cors_allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

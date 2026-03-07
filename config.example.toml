@@ -30,6 +30,9 @@ units = "metric"  # metric, imperial, or standard
 # request_timeout_secs = 60   # Overall request timeout (tower layer)
 # connect_timeout_secs = 5    # HTTP connect timeout (reqwest client)
 
+# CORS allowed origins (empty = allow all origins)
+# cors_allowed_origins = ["https://example.com", "https://app.example.com"]
+
 # Rate limiting (per IP address)
 [rate_limit]
 general_rpm = 60      # Requests per minute for general endpoints
