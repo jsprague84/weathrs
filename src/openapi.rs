@@ -6,6 +6,7 @@ use crate::history::models::{
     DailyHistoryResponse, DailyHistorySummary, HistoryDataPoint, HistoryResponse, TrendExtreme,
     TrendResponse, TrendSummary,
 };
+use crate::air_quality::models::{AirQualityComponents, AirQualityResponse};
 use crate::forecast::models::WidgetResponse;
 use crate::weather::service::WeatherResponse;
 
@@ -32,6 +33,7 @@ use crate::weather::service::WeatherResponse;
         (name = "weather", description = "Current weather data"),
         (name = "forecast", description = "Weather forecasts (daily, hourly)"),
         (name = "widget", description = "Lightweight widget data"),
+        (name = "air-quality", description = "Air quality and pollution data"),
         (name = "history", description = "Historical weather data and trends"),
         (name = "scheduler", description = "Scheduled forecast jobs"),
         (name = "devices", description = "Device registration for push notifications")
@@ -48,6 +50,8 @@ use crate::weather::service::WeatherResponse;
             TrendSummary,
             TrendExtreme,
             WidgetResponse,
+            AirQualityResponse,
+            AirQualityComponents,
         )
     )
 )]

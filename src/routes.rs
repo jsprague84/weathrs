@@ -7,6 +7,7 @@ use axum::{
 };
 use tower_governor::{governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer};
 
+use crate::air_quality::handlers as air_quality_handlers;
 use crate::config::RateLimitConfig;
 use crate::devices::handlers as devices_handlers;
 use crate::forecast::handlers as forecast_handlers;
@@ -121,6 +122,15 @@ fn devices_routes(api_key: Option<String>) -> Router<AppState> {
         .layer(middleware::from_fn(require_api_key))
 }
 
+/// Build the air quality API routes
+fn air_quality_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/air-quality/{city}",
+            get(air_quality_handlers::get_air_quality),
+        )
+}
+
 /// Build the history API routes
 fn history_routes() -> Router<AppState> {
     Router::new()
@@ -137,6 +147,7 @@ pub fn api_v1_routes(device_api_key: Option<String>, rate_limit: &RateLimitConfi
     Router::new()
         .merge(weather_routes())
         .merge(forecast_routes())
+        .merge(air_quality_routes())
         .merge(history_routes())
         .merge(scheduler_routes(rate_limit))
         .merge(devices_routes(device_api_key))

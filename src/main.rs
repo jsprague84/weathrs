@@ -1,3 +1,4 @@
+mod air_quality;
 mod api_budget;
 mod backfill;
 mod cache;
@@ -28,6 +29,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::air_quality::AirQualityService;
 use crate::cache::{create_geo_cache, start_cache_cleanup_task};
 use crate::config::AppConfig;
 use crate::devices::DevicesService;
@@ -47,6 +49,7 @@ pub struct AppState {
     pub history_service: Arc<HistoryService>,
     pub scheduler_service: Arc<SchedulerService>,
     pub devices_service: Arc<DevicesService>,
+    pub air_quality_service: Arc<AirQualityService>,
     pub config: Arc<AppConfig>,
 }
 
@@ -155,6 +158,13 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&api_budget),
     ));
 
+    // Initialize air quality service
+    let air_quality_service = Arc::new(AirQualityService::new(
+        http_client.clone(),
+        &config.openweathermap_api_key,
+        Arc::clone(&forecast_service),
+    ));
+
     // Initialize devices service backed by SQLite
     let devices_service = Arc::new(DevicesService::new(
         http_client.clone(),
@@ -211,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         history_service,
         scheduler_service,
         devices_service,
+        air_quality_service,
         config: Arc::new(config.clone()),
     };
 
