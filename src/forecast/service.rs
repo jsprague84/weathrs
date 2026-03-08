@@ -124,6 +124,7 @@ impl ForecastService {
 
     /// Geocode by city name
     async fn geocode_city(&self, city: &str) -> Result<GeoLocation, ForecastError> {
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "geocoding").increment(1);
         tracing::debug!(city = %city, "Geocoding city");
 
         let response = self
@@ -152,6 +153,8 @@ impl ForecastService {
 
     /// Geocode by zip code (e.g., "60601" or "60601,US")
     async fn geocode_zip(&self, zip: &str) -> Result<GeoLocation, ForecastError> {
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "geocoding_zip")
+            .increment(1);
         // Default to US if no country specified
         let zip_query = if zip.contains(',') {
             zip.to_string()
@@ -198,6 +201,7 @@ impl ForecastService {
         );
 
         // Then fetch the forecast using One Call API
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall").increment(1);
         let response = self
             .client
             .get(ONE_CALL_API_URL)
@@ -237,6 +241,8 @@ impl ForecastService {
     ) -> Result<ForecastResponse, ForecastError> {
         let location = self.geocode(city).await?;
 
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall_daily")
+            .increment(1);
         let response = self
             .client
             .get(ONE_CALL_API_URL)
@@ -272,6 +278,8 @@ impl ForecastService {
     ) -> Result<ForecastResponse, ForecastError> {
         let location = self.geocode(city).await?;
 
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall_hourly")
+            .increment(1);
         let response = self
             .client
             .get(ONE_CALL_API_URL)

@@ -503,6 +503,7 @@ impl HistoryService {
         units: &str,
     ) -> Result<Vec<TimemachineData>, HistoryError> {
         self.api_budget.record_call();
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "timemachine").increment(1);
 
         let response = self
             .client

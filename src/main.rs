@@ -9,6 +9,7 @@ mod error;
 mod extractors;
 mod forecast;
 mod history;
+mod metrics;
 mod middleware;
 mod notifications;
 mod openapi;
@@ -36,8 +37,10 @@ use crate::config::AppConfig;
 use crate::devices::DevicesService;
 use crate::forecast::ForecastService;
 use crate::history::HistoryService;
+use crate::metrics::init_metrics;
 use crate::scheduler::{JobConfig, SchedulerService};
 use crate::weather::WeatherService;
+use metrics_exporter_prometheus::PrometheusHandle;
 
 const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 90;
 
@@ -52,6 +55,7 @@ pub struct AppState {
     pub devices_service: Arc<DevicesService>,
     pub air_quality_service: Arc<AirQualityService>,
     pub config: Arc<AppConfig>,
+    pub metrics_handle: PrometheusHandle,
 }
 
 /// Create shared HTTP client with connection pooling
@@ -113,6 +117,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    // Initialize Prometheus metrics recorder
+    let metrics_handle = init_metrics();
+    tracing::info!("Prometheus metrics initialized");
 
     // Load configuration
     let config = AppConfig::load()?;
@@ -221,6 +229,7 @@ async fn main() -> anyhow::Result<()> {
         devices_service,
         air_quality_service,
         config: Arc::new(config.clone()),
+        metrics_handle,
     };
 
     // Build CORS layer

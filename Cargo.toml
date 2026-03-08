@@ -59,3 +59,7 @@ async-trait = "0.1"
 
 # Rate limiting
 tower_governor = "0.8"
+
+# Metrics
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"

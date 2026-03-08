@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
+    extract::State,
     middleware,
     routing::{get, post, put},
     Extension, Router,
@@ -14,6 +15,7 @@ use crate::config::RateLimitConfig;
 use crate::devices::handlers as devices_handlers;
 use crate::forecast::handlers as forecast_handlers;
 use crate::history::handlers as history_handlers;
+use crate::metrics::track_metrics;
 use crate::middleware::{require_api_key, DeviceApiKey};
 use crate::openapi::swagger_ui;
 use crate::scheduler::handlers as scheduler_handlers;
@@ -147,6 +149,11 @@ pub fn api_v1_routes(
         .merge(devices_routes(device_api_key))
 }
 
+/// Prometheus metrics scrape endpoint
+async fn metrics_handler(State(state): State<AppState>) -> String {
+    state.metrics_handle.render()
+}
+
 /// Build the complete application router
 pub fn build_router(state: AppState) -> Router<AppState> {
     let device_api_key = state.config.device_api_key.clone();
@@ -168,6 +175,8 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .route("/", get(weather_handlers::health))
         .route("/health", get(weather_handlers::health))
         .route("/health/deep", get(weather_handlers::health_deep))
+        // Prometheus metrics endpoint (no rate limit)
+        .route("/metrics", get(metrics_handler))
         // API v1 routes with general rate limiting
         .nest(
             "/api/v1",
@@ -175,4 +184,6 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         )
         // Swagger UI for API documentation
         .merge(swagger_ui())
+        // Metrics middleware for all routes
+        .layer(middleware::from_fn(track_metrics))
 }

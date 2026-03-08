@@ -103,6 +103,7 @@ impl GeoCacheWithDb {
     pub async fn get(&self, key: &str) -> Option<CachedGeoLocation> {
         // Check in-memory cache first
         if let Some(cached) = self.memory.get(&key.to_string()) {
+            metrics::counter!(crate::metrics::CACHE_HITS, "layer" => "memory").increment(1);
             return Some(cached);
         }
 
@@ -136,9 +137,11 @@ impl GeoCacheWithDb {
             };
             // Promote to in-memory cache
             self.memory.insert(key.to_string(), location.clone());
+            metrics::counter!(crate::metrics::CACHE_HITS, "layer" => "sqlite").increment(1);
             tracing::debug!(key = %key, "Geocoding cache hit (SQLite)");
             Some(location)
         } else {
+            metrics::counter!(crate::metrics::CACHE_MISSES).increment(1);
             None
         }
     }

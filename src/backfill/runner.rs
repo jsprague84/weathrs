@@ -158,6 +158,10 @@ async fn run_backfill(
         );
     }
 
+    if total_inserted > 0 {
+        metrics::counter!(crate::metrics::BACKFILL_DAYS_FETCHED).increment(total_inserted as u64);
+    }
+
     tracing::info!(
         total_inserted = total_inserted,
         budget_used = budget.used_today(),
