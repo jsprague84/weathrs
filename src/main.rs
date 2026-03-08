@@ -25,6 +25,7 @@ use reqwest::Client;
 use std::net::SocketAddr;
 use std::{sync::Arc, time::Duration};
 use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -250,6 +251,7 @@ async fn main() -> anyhow::Result<()> {
     // Build router using the routes module
     let app = routes::build_router(state.clone())
         .layer(cors)
+        .layer(CompressionLayer::new())
         .layer(
             ServiceBuilder::new()
                 // Handle timeout errors
