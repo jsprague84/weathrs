@@ -77,6 +77,42 @@ impl HttpError for HistoryError {
 
 impl_into_response!(HistoryError);
 
+/// Convert a DbError into a HistoryError
+fn db_err(e: crate::db::DbError) -> HistoryError {
+    HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string()))
+}
+
+/// Convert a timemachine data point into a HistoryRecord
+fn to_record(
+    city: &str,
+    lat: f64,
+    lon: f64,
+    dp: TimemachineData,
+    units: &str,
+    now: i64,
+) -> HistoryRecord {
+    HistoryRecord {
+        city: city.to_string(),
+        lat,
+        lon,
+        timestamp: dp.dt,
+        temperature: dp.temp,
+        feels_like: dp.feels_like,
+        humidity: dp.humidity as i32,
+        pressure: dp.pressure as i32,
+        wind_speed: dp.wind_speed,
+        wind_direction: dp.wind_deg.map(|d| d as i32),
+        clouds: dp.clouds.map(|c| c as i32),
+        visibility: dp.visibility.map(|v| v as i32),
+        description: dp.weather.first().map(|w| w.description.clone()),
+        icon: dp.weather.first().map(|w| w.icon.clone()),
+        rain_1h: dp.rain.and_then(|r| r.one_hour),
+        snow_1h: dp.snow.and_then(|s| s.one_hour),
+        units: units.to_string(),
+        fetched_at: now,
+    }
+}
+
 pub struct HistoryService {
     client: Client,
     api_key: String,
@@ -222,7 +258,7 @@ impl HistoryService {
             .repo
             .get_range(&city_name, start_ts, end_ts, units)
             .await
-            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
+            .map_err(db_err)?;
 
         let data_points = records
             .into_iter()
@@ -277,7 +313,7 @@ impl HistoryService {
             .repo
             .get_daily_summary(&city_name, start_ts, end_ts, units)
             .await
-            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
+            .map_err(db_err)?;
 
         let days = summaries
             .into_iter()
@@ -351,7 +387,7 @@ impl HistoryService {
             .repo
             .get_daily_summary(&city_name, start_ts, end_ts, units)
             .await
-            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
+            .map_err(db_err)?;
 
         let daily_summaries: Vec<DailyHistorySummary> = summaries
             .into_iter()
@@ -393,7 +429,7 @@ impl HistoryService {
             .repo
             .get_missing_days(city, start_ts, end_ts, units)
             .await
-            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
+            .map_err(db_err)?;
 
         if missing_days.is_empty() {
             return Ok(());
@@ -430,26 +466,7 @@ impl HistoryService {
                 Ok(data_points) => {
                     fetched_count += 1;
                     for dp in data_points {
-                        records.push(HistoryRecord {
-                            city: city.to_string(),
-                            lat: location.lat,
-                            lon: location.lon,
-                            timestamp: dp.dt,
-                            temperature: dp.temp,
-                            feels_like: dp.feels_like,
-                            humidity: dp.humidity as i32,
-                            pressure: dp.pressure as i32,
-                            wind_speed: dp.wind_speed,
-                            wind_direction: dp.wind_deg.map(|d| d as i32),
-                            clouds: dp.clouds.map(|c| c as i32),
-                            visibility: dp.visibility.map(|v| v as i32),
-                            description: dp.weather.first().map(|w| w.description.clone()),
-                            icon: dp.weather.first().map(|w| w.icon.clone()),
-                            rain_1h: dp.rain.and_then(|r| r.one_hour),
-                            snow_1h: dp.snow.and_then(|s| s.one_hour),
-                            units: units.to_string(),
-                            fetched_at: now,
-                        });
+                        records.push(to_record(city, location.lat, location.lon, dp, units, now));
                     }
                 }
                 Err(e) => {
@@ -464,10 +481,7 @@ impl HistoryService {
         }
 
         if !records.is_empty() {
-            let inserted =
-                self.repo.insert_batch(&records).await.map_err(|e| {
-                    HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string()))
-                })?;
+            let inserted = self.repo.insert_batch(&records).await.map_err(db_err)?;
 
             tracing::debug!(
                 city = %city,
@@ -530,7 +544,7 @@ impl HistoryService {
         self.repo
             .get_missing_days(city, start_ts, end_ts, units)
             .await
-            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))
+            .map_err(db_err)
     }
 
     /// Fetch one day of history if API budget allows.
@@ -554,37 +568,14 @@ impl HistoryService {
         let now = chrono::Utc::now().timestamp();
         let records: Vec<HistoryRecord> = data_points
             .into_iter()
-            .map(|dp| HistoryRecord {
-                city: city.to_string(),
-                lat: location.lat,
-                lon: location.lon,
-                timestamp: dp.dt,
-                temperature: dp.temp,
-                feels_like: dp.feels_like,
-                humidity: dp.humidity as i32,
-                pressure: dp.pressure as i32,
-                wind_speed: dp.wind_speed,
-                wind_direction: dp.wind_deg.map(|d| d as i32),
-                clouds: dp.clouds.map(|c| c as i32),
-                visibility: dp.visibility.map(|v| v as i32),
-                description: dp.weather.first().map(|w| w.description.clone()),
-                icon: dp.weather.first().map(|w| w.icon.clone()),
-                rain_1h: dp.rain.and_then(|r| r.one_hour),
-                snow_1h: dp.snow.and_then(|s| s.one_hour),
-                units: units.to_string(),
-                fetched_at: now,
-            })
+            .map(|dp| to_record(city, location.lat, location.lon, dp, units, now))
             .collect();
 
         if records.is_empty() {
             return Ok(Some(0));
         }
 
-        let inserted = self
-            .repo
-            .insert_batch(&records)
-            .await
-            .map_err(|e| HistoryError::DatabaseError(sqlx::Error::Protocol(e.to_string())))?;
+        let inserted = self.repo.insert_batch(&records).await.map_err(db_err)?;
 
         Ok(Some(inserted))
     }
