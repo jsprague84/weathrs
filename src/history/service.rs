@@ -413,8 +413,14 @@ impl HistoryService {
 
         let mut records = Vec::new();
         let now = chrono::Utc::now().timestamp();
+        let mut fetched_count = 0;
 
         for day_ts in &days_to_fetch {
+            // Throttle API calls to avoid OWM rate limits (60 calls/min on free tier)
+            if fetched_count > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            }
+
             // Use noon UTC for the API call to ensure we get the right day
             let fetch_ts = day_ts + 12 * 3600;
             match self
@@ -422,6 +428,7 @@ impl HistoryService {
                 .await
             {
                 Ok(data_points) => {
+                    fetched_count += 1;
                     for dp in data_points {
                         records.push(HistoryRecord {
                             city: city.to_string(),
