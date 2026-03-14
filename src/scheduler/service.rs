@@ -334,12 +334,18 @@ impl SchedulerService {
         // Try the input city name first, then the geocoded name if different
         let geocoded_city = &forecast.location.city;
         let mut sent = self.devices_service.send_to_city(city, &message).await?;
-        if geocoded_city.to_lowercase() != city.to_lowercase() {
-            let extra = self
+        if sent == 0 && geocoded_city.to_lowercase() != city.to_lowercase() {
+            sent = self
                 .devices_service
                 .send_to_city(geocoded_city, &message)
                 .await?;
-            sent += extra;
+        }
+
+        // Fallback: if no city-matched devices found, broadcast to all enabled devices
+        // (handles cases where device cities are empty or mismatched)
+        if sent == 0 {
+            tracing::warn!(city = %city, "No devices matched city, broadcasting to all enabled devices");
+            sent = self.devices_service.broadcast(&message).await?;
         }
 
         tracing::info!(city = %city, geocoded = %geocoded_city, sent = sent, "Manual trigger complete");

@@ -116,11 +116,8 @@ pub async fn list_jobs(State(state): State<AppState>) -> Json<JobListResponse> {
 
 /// Trigger a manual forecast with notification
 /// POST /scheduler/trigger
-pub async fn trigger_forecast(
-    State(state): State<AppState>,
-    body: Option<Json<TriggerRequest>>,
-) -> impl IntoResponse {
-    let request = body.map(|Json(r)| r).unwrap_or_default();
+pub async fn trigger_forecast(State(state): State<AppState>, body: String) -> impl IntoResponse {
+    let request: TriggerRequest = serde_json::from_str(&body).unwrap_or_default();
     let units = request.units.unwrap_or_else(|| state.config.units.clone());
 
     // Resolve city: use provided city, or fall back to first enabled device's primary city
