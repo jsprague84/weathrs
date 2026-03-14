@@ -5,8 +5,10 @@ use thiserror::Error;
 use utoipa::ToSchema;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::api_budget::ApiCallBudget;
+use crate::cache::TtlCache;
 use crate::error::HttpError;
 use crate::impl_into_response;
 
@@ -49,7 +51,7 @@ impl HttpError for WeatherError {
 
 impl_into_response!(WeatherError);
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct WeatherResponse {
     pub city: String,
     pub country: String,
@@ -107,6 +109,7 @@ pub struct WeatherService {
     client: Client,
     api_key: String,
     api_budget: Arc<ApiCallBudget>,
+    weather_cache: TtlCache<String, WeatherResponse>,
 }
 
 impl WeatherService {
@@ -115,6 +118,7 @@ impl WeatherService {
             client,
             api_key: api_key.to_string(),
             api_budget,
+            weather_cache: TtlCache::new(Duration::from_secs(5 * 60)),
         }
     }
 
@@ -133,6 +137,11 @@ impl WeatherService {
         location: &str,
         units: &str,
     ) -> Result<WeatherResponse, WeatherError> {
+        let cache_key = format!("{}_{}", location.trim().to_lowercase(), units);
+        if let Some(cached) = self.weather_cache.get(&cache_key) {
+            return Ok(cached);
+        }
+
         tracing::debug!(location = %location, units = %units, "Fetching weather data");
         self.api_budget.record_call();
 
@@ -201,6 +210,7 @@ impl WeatherService {
 
         tracing::info!(city = %weather.city, temp = %weather.temperature, "Weather data fetched successfully");
 
+        self.weather_cache.insert(cache_key, weather.clone());
         Ok(weather)
     }
 }

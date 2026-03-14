@@ -193,7 +193,7 @@ fn default_connect_timeout_secs() -> u64 {
 }
 
 fn default_backfill_cron() -> String {
-    "0 0 2 * * *".to_string()
+    "0 0 2,14,22 * * *".to_string()
 }
 
 fn default_max_years() -> u32 {
@@ -201,7 +201,7 @@ fn default_max_years() -> u32 {
 }
 
 fn default_daily_budget() -> u32 {
-    1000
+    800
 }
 
 fn default_host() -> String {

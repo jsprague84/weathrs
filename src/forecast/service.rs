@@ -3,10 +3,11 @@ use reqwest::Client;
 use thiserror::Error;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::models::*;
 use crate::api_budget::ApiCallBudget;
-use crate::cache::{normalize_cache_key, CachedGeoLocation, GeoCache};
+use crate::cache::{normalize_cache_key, CachedGeoLocation, GeoCache, TtlCache};
 use crate::error::HttpError;
 use crate::impl_into_response;
 
@@ -61,6 +62,7 @@ pub struct ForecastService {
     api_key: String,
     geo_cache: GeoCache,
     api_budget: Arc<ApiCallBudget>,
+    forecast_cache: TtlCache<String, ForecastResponse>,
 }
 
 impl ForecastService {
@@ -75,6 +77,7 @@ impl ForecastService {
             api_key: api_key.to_string(),
             geo_cache,
             api_budget,
+            forecast_cache: TtlCache::new(Duration::from_secs(15 * 60)),
         }
     }
 
@@ -200,7 +203,11 @@ impl ForecastService {
         city: &str,
         units: &str,
     ) -> Result<ForecastResponse, ForecastError> {
-        // First, geocode the city to get coordinates
+        let cache_key = format!("full_{}_{}", normalize_cache_key(city), units);
+        if let Some(cached) = self.forecast_cache.get(&cache_key) {
+            return Ok(cached);
+        }
+
         let location = self.geocode(city).await?;
 
         tracing::debug!(
@@ -210,7 +217,6 @@ impl ForecastService {
             "Fetching forecast"
         );
 
-        // Then fetch the forecast using One Call API
         self.api_budget.record_call();
         metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall").increment(1);
         let response = self
@@ -221,27 +227,24 @@ impl ForecastService {
                 ("lon", location.lon.to_string()),
                 ("units", units.to_string()),
                 ("appid", self.api_key.clone()),
-                ("exclude", "minutely".to_string()), // Skip minute-by-minute data
+                ("exclude", "minutely".to_string()),
             ])
             .send()
             .await?;
 
         let status = response.status();
-        tracing::debug!(status = %status, "Received One Call API response");
-
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(ForecastError::SubscriptionRequired);
         }
-
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
             return Err(ForecastError::ApiError(text));
         }
 
         let data: OneCallResponse = response.json().await?;
-
-        // Transform to our response format
-        Ok(self.transform_response(data, location))
+        let result = self.transform_response(data, location);
+        self.forecast_cache.insert(cache_key, result.clone());
+        Ok(result)
     }
 
     /// Get only daily forecast (8 days)
@@ -250,6 +253,11 @@ impl ForecastService {
         city: &str,
         units: &str,
     ) -> Result<ForecastResponse, ForecastError> {
+        let cache_key = format!("daily_{}_{}", normalize_cache_key(city), units);
+        if let Some(cached) = self.forecast_cache.get(&cache_key) {
+            return Ok(cached);
+        }
+
         let location = self.geocode(city).await?;
 
         self.api_budget.record_call();
@@ -272,14 +280,15 @@ impl ForecastService {
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(ForecastError::SubscriptionRequired);
         }
-
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
             return Err(ForecastError::ApiError(text));
         }
 
         let data: OneCallResponse = response.json().await?;
-        Ok(self.transform_response(data, location))
+        let result = self.transform_response(data, location);
+        self.forecast_cache.insert(cache_key, result.clone());
+        Ok(result)
     }
 
     /// Get only hourly forecast (48 hours)
@@ -288,6 +297,11 @@ impl ForecastService {
         city: &str,
         units: &str,
     ) -> Result<ForecastResponse, ForecastError> {
+        let cache_key = format!("hourly_{}_{}", normalize_cache_key(city), units);
+        if let Some(cached) = self.forecast_cache.get(&cache_key) {
+            return Ok(cached);
+        }
+
         let location = self.geocode(city).await?;
 
         self.api_budget.record_call();
@@ -310,14 +324,15 @@ impl ForecastService {
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(ForecastError::SubscriptionRequired);
         }
-
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
             return Err(ForecastError::ApiError(text));
         }
 
         let data: OneCallResponse = response.json().await?;
-        Ok(self.transform_response(data, location))
+        let result = self.transform_response(data, location);
+        self.forecast_cache.insert(cache_key, result.clone());
+        Ok(result)
     }
 
     fn transform_response(&self, data: OneCallResponse, location: GeoLocation) -> ForecastResponse {

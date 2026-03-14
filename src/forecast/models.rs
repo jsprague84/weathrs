@@ -177,7 +177,7 @@ pub struct WeatherAlert {
 // API Response Models (External - what we return to clients)
 // ============================================================================
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ForecastResponse {
     pub location: LocationInfo,
     pub timezone: String,
@@ -188,7 +188,7 @@ pub struct ForecastResponse {
     pub alerts: Vec<AlertResponse>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LocationInfo {
     pub city: String,
     pub country: String,
@@ -198,7 +198,7 @@ pub struct LocationInfo {
     pub lon: f64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CurrentWeatherResponse {
     pub timestamp: i64,
     pub temperature: f64,
@@ -220,7 +220,7 @@ pub struct CurrentWeatherResponse {
     pub sunset: Option<i64>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HourlyForecastResponse {
     pub timestamp: i64,
     pub temperature: f64,
@@ -240,7 +240,7 @@ pub struct HourlyForecastResponse {
     pub icon: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DailyForecastResponse {
     pub timestamp: i64,
     pub sunrise: i64,
@@ -272,7 +272,7 @@ pub struct DailyForecastResponse {
 }
 
 /// Minimal response optimized for home screen widgets
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct WidgetResponse {
     pub city: String,
     pub temperature: f64,
@@ -284,7 +284,7 @@ pub struct WidgetResponse {
     pub updated_at: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AlertResponse {
     pub sender: String,
     pub event: String,

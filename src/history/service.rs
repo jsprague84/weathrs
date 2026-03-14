@@ -249,14 +249,13 @@ impl HistoryService {
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
 
-        // Fetch missing data from OWM and store in DB
-        self.backfill_data(&city_name, &location, start_ts, end_ts, units)
+        // Always store/query in metric (canonical units)
+        self.backfill_data(&city_name, &location, start_ts, end_ts, "metric")
             .await?;
 
-        // Query all data from DB
         let records = self
             .repo
-            .get_range(&city_name, start_ts, end_ts, units)
+            .get_range(&city_name, start_ts, end_ts, "metric")
             .await
             .map_err(db_err)?;
 
@@ -264,11 +263,11 @@ impl HistoryService {
             .into_iter()
             .map(|r| HistoryDataPoint {
                 timestamp: r.timestamp,
-                temperature: r.temperature,
-                feels_like: r.feels_like,
+                temperature: convert_temp(r.temperature, units),
+                feels_like: convert_temp(r.feels_like, units),
                 humidity: r.humidity,
                 pressure: r.pressure,
-                wind_speed: r.wind_speed,
+                wind_speed: convert_speed(r.wind_speed, units),
                 wind_direction: r.wind_direction,
                 clouds: r.clouds,
                 visibility: r.visibility,
@@ -306,12 +305,12 @@ impl HistoryService {
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
 
-        self.backfill_data(&city_name, &location, start_ts, end_ts, units)
+        self.backfill_data(&city_name, &location, start_ts, end_ts, "metric")
             .await?;
 
         let summaries = self
             .repo
-            .get_daily_summary(&city_name, start_ts, end_ts, units)
+            .get_daily_summary(&city_name, start_ts, end_ts, "metric")
             .await
             .map_err(db_err)?;
 
@@ -319,11 +318,11 @@ impl HistoryService {
             .into_iter()
             .map(|s| DailyHistorySummary {
                 date: s.date,
-                temp_min: s.temp_min,
-                temp_max: s.temp_max,
-                temp_avg: round_2(s.temp_avg),
+                temp_min: convert_temp(s.temp_min, units),
+                temp_max: convert_temp(s.temp_max, units),
+                temp_avg: round_2(convert_temp(s.temp_avg, units)),
                 humidity_avg: round_2(s.humidity_avg),
-                wind_speed_avg: round_2(s.wind_speed_avg),
+                wind_speed_avg: round_2(convert_speed(s.wind_speed_avg, units)),
                 precipitation_total: round_2(s.precipitation_total),
                 dominant_condition: s.dominant_condition,
             })
@@ -380,12 +379,12 @@ impl HistoryService {
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
 
-        self.backfill_data(&city_name, &location, start_ts, end_ts, units)
+        self.backfill_data(&city_name, &location, start_ts, end_ts, "metric")
             .await?;
 
         let summaries = self
             .repo
-            .get_daily_summary(&city_name, start_ts, end_ts, units)
+            .get_daily_summary(&city_name, start_ts, end_ts, "metric")
             .await
             .map_err(db_err)?;
 
@@ -393,11 +392,11 @@ impl HistoryService {
             .into_iter()
             .map(|s| DailyHistorySummary {
                 date: s.date,
-                temp_min: s.temp_min,
-                temp_max: s.temp_max,
-                temp_avg: round_2(s.temp_avg),
+                temp_min: convert_temp(s.temp_min, units),
+                temp_max: convert_temp(s.temp_max, units),
+                temp_avg: round_2(convert_temp(s.temp_avg, units)),
                 humidity_avg: round_2(s.humidity_avg),
-                wind_speed_avg: round_2(s.wind_speed_avg),
+                wind_speed_avg: round_2(convert_speed(s.wind_speed_avg, units)),
                 precipitation_total: round_2(s.precipitation_total),
                 dominant_condition: s.dominant_condition,
             })
@@ -677,6 +676,23 @@ fn compute_trend_direction(days: &[DailyHistorySummary]) -> String {
         "falling".to_string()
     } else {
         "stable".to_string()
+    }
+}
+
+/// Convert temperature from metric (Celsius) to the requested units
+fn convert_temp(celsius: f64, units: &str) -> f64 {
+    match units {
+        "imperial" => celsius * 9.0 / 5.0 + 32.0,
+        "standard" => celsius + 273.15,
+        _ => celsius, // metric or unknown
+    }
+}
+
+/// Convert wind speed from metric (m/s) to the requested units
+fn convert_speed(ms: f64, units: &str) -> f64 {
+    match units {
+        "imperial" => ms * 2.237, // m/s to mph
+        _ => ms,
     }
 }
 

@@ -13,6 +13,7 @@ pub struct StatsResponse {
     pub history: HistoryStatsResponse,
     pub devices: DeviceStats,
     pub scheduler: SchedulerStats,
+    pub backfill: BackfillConfigStats,
 }
 
 #[derive(Serialize)]
@@ -43,6 +44,15 @@ pub struct DeviceStats {
 pub struct SchedulerStats {
     pub total_jobs: usize,
     pub enabled_jobs: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackfillConfigStats {
+    pub enabled: bool,
+    pub max_years: u32,
+    pub daily_budget: u32,
+    pub cron: String,
 }
 
 pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
@@ -83,10 +93,18 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
         enabled_jobs: jobs.iter().filter(|j| j.enabled).count(),
     };
 
+    let backfill = BackfillConfigStats {
+        enabled: state.config.history_backfill.enabled,
+        max_years: state.config.history_backfill.max_years,
+        daily_budget: state.config.history_backfill.daily_budget,
+        cron: state.config.history_backfill.cron.clone(),
+    };
+
     Json(StatsResponse {
         api_budget,
         history,
         devices,
         scheduler,
+        backfill,
     })
 }
