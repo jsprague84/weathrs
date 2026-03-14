@@ -18,11 +18,12 @@ pub enum NotificationError {
 pub struct NotificationMessage {
     pub title: String,
     pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
     #[serde(default)]
     pub priority: Priority,
     #[serde(default)]
     pub tags: Vec<String>,
-    /// City for navigation (used by Expo push notifications)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub city: Option<String>,
 }

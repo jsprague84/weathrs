@@ -36,8 +36,16 @@ pub struct ExpoPushMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 
+    /// Subtitle (Android: subText, iOS: subtitle)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
+
     /// Notification body
     pub body: String,
+
+    /// Android accent color
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 
     /// Custom data payload
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,13 +135,15 @@ impl ExpoClient {
         let push_message = ExpoPushMessage {
             to: token.to_string(),
             title: Some(message.title.clone()),
+            subtitle: message.subtitle.clone(),
             body: message.body.clone(),
+            color: Some("#2196F3".to_string()),
             data: Self::build_data(message),
             priority: Some(Self::convert_priority(message.priority)),
             sound: Some("default".to_string()),
             badge: None,
             channel_id: Some("weather".to_string()),
-            ttl: Some(3600), // 1 hour
+            ttl: Some(3600),
         };
 
         let response = self
@@ -206,7 +216,9 @@ impl ExpoClient {
                 .map(|token| ExpoPushMessage {
                     to: token.clone(),
                     title: Some(message.title.clone()),
+                    subtitle: message.subtitle.clone(),
                     body: message.body.clone(),
+                    color: Some("#2196F3".to_string()),
                     data: data.clone(),
                     priority: Some(Self::convert_priority(message.priority)),
                     sound: Some("default".to_string()),

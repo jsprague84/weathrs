@@ -177,6 +177,7 @@ impl SchedulerService {
                             // Send error notification to devices subscribed to this city
                             let message = NotificationMessage {
                                 title: format!("Weather Alert: {} Failed", job_name),
+                                subtitle: None,
                                 body: format!("Failed to fetch forecast for {}: {}", city, e),
                                 priority: Priority::High,
                                 tags: vec!["warning".to_string()],
@@ -400,38 +401,48 @@ fn build_notification_message(
     let city = &forecast.location.city;
     let country = &forecast.location.country;
 
-    // Build summary from current + today's forecast
+    let mut subtitle = String::new();
     let mut body = String::new();
 
     if let Some(ref current) = forecast.current {
+        // Subtitle: concise current conditions
+        subtitle = format!(
+            "{:.0}\u{00B0} \u{2022} {}",
+            current.temperature, current.description
+        );
+
+        // Body: detailed info
         body.push_str(&format!(
-            "Now: {:.1} (feels {:.1})\n",
+            "\u{1F321}\u{FE0F} {:.0}\u{00B0} (feels {:.0}\u{00B0})\n",
             current.temperature, current.feels_like
         ));
-        body.push_str(&format!("{}\n", current.description));
+        body.push_str(&format!(
+            "\u{1F4A7} {}%  \u{1F32C}\u{FE0F} {:.0}mph\n",
+            current.humidity, current.wind_speed
+        ));
     }
 
     if let Some(today) = forecast.daily.first() {
         body.push_str(&format!(
-            "Today: {:.0} - {:.0}\n",
-            today.temp_min, today.temp_max
+            "\u{2B06}\u{FE0F} {:.0}\u{00B0}  \u{2B07}\u{FE0F} {:.0}\u{00B0}",
+            today.temp_max, today.temp_min
         ));
         if today.precipitation_probability > 0.0 {
             body.push_str(&format!(
-                "Rain: {:.0}% chance\n",
+                "  \u{2614} {:.0}%",
                 today.precipitation_probability * 100.0
             ));
         }
+        body.push('\n');
         if let Some(ref summary) = today.summary {
             body.push_str(summary);
         }
     }
 
-    // Check for alerts
     let priority = if !forecast.alerts.is_empty() {
-        body.push_str("\n\nWEATHER ALERTS:\n");
+        body.push_str("\n\n\u{26A0}\u{FE0F} ALERTS:\n");
         for alert in &forecast.alerts {
-            body.push_str(&format!("- {}\n", alert.event));
+            body.push_str(&format!("\u{2022} {}\n", alert.event));
         }
         Priority::Urgent
     } else {
@@ -445,7 +456,12 @@ fn build_notification_message(
     };
 
     NotificationMessage {
-        title: format!("Weather: {}, {}", city, country),
+        title: format!("{}, {}", city, country),
+        subtitle: if subtitle.is_empty() {
+            None
+        } else {
+            Some(subtitle)
+        },
         body,
         priority,
         tags,

@@ -186,6 +186,7 @@ impl DevicesService {
     pub async fn send_test(&self, token: &str) -> Result<(), DevicesError> {
         let message = NotificationMessage {
             title: "Test Notification".to_string(),
+            subtitle: Some("Weathrs Push Test".to_string()),
             body: "This is a test notification from Weathrs!".to_string(),
             priority: Priority::Default,
             tags: vec!["test".to_string()],
