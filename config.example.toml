@@ -1,12 +1,14 @@
 # Weathrs Configuration
 # Copy this file to config.toml or config.local.toml
+# All settings can also be set via environment variables with WEATHRS_ prefix
+# e.g., WEATHRS_OPENWEATHERMAP_API_KEY, WEATHRS_PORT, WEATHRS_UNITS
 
 # Required: OpenWeatherMap API key
 openweathermap_api_key = "your_api_key_here"
 
 # Server configuration
 host = "0.0.0.0"
-port = 3000
+port = 3030
 
 # Weather defaults
 # Location can be city name or zip code:
@@ -23,8 +25,10 @@ units = "metric"  # metric, imperial, or standard
 # device_api_key = "your_secret_key_here"
 
 # Database configuration (SQLite)
-# Default: sqlite:data/weathrs.db
 # database_url = "sqlite:data/weathrs.db"
+
+# History data retention (days) — records older than this are cleaned up
+# history_retention_days = 90
 
 # Timeout configuration
 # request_timeout_secs = 60   # Overall request timeout (tower layer)
@@ -38,7 +42,7 @@ units = "metric"  # metric, imperial, or standard
 general_rpm = 60      # Requests per minute for general endpoints
 mutation_rpm = 10     # Requests per minute for mutation endpoints (POST/PUT/DELETE)
 
-# Display configuration - what to show in weather response
+# Display configuration — controls which fields appear in weather response
 [display]
 temperature = true
 feels_like = true
@@ -48,11 +52,26 @@ description = true
 pressure = false
 visibility = false
 
+# History backfill — automatically fills missing weather history data
+# Uses remaining OWM API budget to build a local database over time.
+# Cities are sourced from: devices > scheduler jobs > fallback_cities
+[history_backfill]
+enabled = false
+# Cron schedule (6-field: sec min hour day month weekday)
+# Default: runs 3x daily at 2AM, 2PM, 10PM UTC
+# cron = "0 0 2,14,22 * * *"
+# How many years of history to collect per city
+# max_years = 5
+# Max OWM API calls per day for backfill (reserves 200 for user requests)
+# daily_budget = 800
+# Cities to backfill when no devices or jobs are configured
+# fallback_cities = ["Chicago", "90210"]
+
 # Scheduler configuration
 [scheduler]
 enabled = true
 
-# Define scheduled forecast jobs
+# Scheduled forecast jobs
 # Jobs run on a cron schedule and send push notifications to registered devices
 # Cron format: "sec min hour day month weekday" (6 fields, not 5!)
 
@@ -61,8 +80,8 @@ id = "morning-weather"
 name = "Morning Weather Report"
 city = "Chicago"
 units = "metric"
-cron = "0 0 7 * * *"  # Every day at 7:00 AM (sec min hour day month weekday)
-timezone = "America/Chicago"  # IANA timezone for job execution
+cron = "0 0 7 * * *"  # Every day at 7:00 AM
+timezone = "America/Chicago"
 include_daily = true
 include_hourly = false
 enabled = true
@@ -79,25 +98,10 @@ heat_threshold = 35.0       # Notify when temp above this (Celsius)
 # [[scheduler.jobs]]
 # id = "home-weather"
 # name = "Home Weather"
-# city = "90210"  # Beverly Hills by zip code
+# city = "90210"
 # units = "imperial"
-# cron = "0 0 6 * * *"  # 6:00 AM daily
+# cron = "0 0 6 * * *"
 # timezone = "America/Los_Angeles"
-# include_daily = true
-# include_hourly = false
-# enabled = true
-# [scheduler.jobs.notify]
-# on_run = true
-# on_alert = true
-
-# Example: Job for international location
-# [[scheduler.jobs]]
-# id = "evening-london"
-# name = "London Evening Update"
-# city = "London,GB"
-# units = "metric"
-# cron = "0 0 18 * * *"  # 6:00 PM daily (sec min hour day month weekday)
-# timezone = "Europe/London"
 # include_daily = true
 # include_hourly = false
 # enabled = true
