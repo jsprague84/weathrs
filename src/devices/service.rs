@@ -19,6 +19,9 @@ pub enum DevicesError {
 
     #[error("Failed to send notification: {0}")]
     NotificationError(String),
+
+    #[error("Invalid token: {0}")]
+    InvalidToken(String),
 }
 
 /// Service for managing device registrations and sending push notifications
@@ -49,6 +52,13 @@ impl DevicesService {
         &self,
         request: DeviceRegistrationRequest,
     ) -> Result<Device, DevicesError> {
+        // Reject raw FCM tokens — only accept Expo push tokens
+        if !request.token.starts_with("ExponentPushToken[") {
+            return Err(DevicesError::InvalidToken(
+                "Token must be an Expo push token (ExponentPushToken[...])".to_string(),
+            ));
+        }
+
         let now = Self::now();
 
         // Check if device already exists
