@@ -112,8 +112,8 @@ fn devices_routes(api_key: Option<String>) -> Router<AppState> {
         )
         .route("/devices/count", get(devices_handlers::get_device_count))
         .route("/devices/debug", get(devices_handlers::list_devices))
-        .layer(Extension(DeviceApiKey(api_key)))
         .layer(middleware::from_fn(require_api_key))
+        .layer(Extension(DeviceApiKey(api_key)))
 }
 
 /// Build the air quality API routes
