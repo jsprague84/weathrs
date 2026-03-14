@@ -405,31 +405,29 @@ fn build_notification_message(
     let mut body = String::new();
 
     if let Some(ref current) = forecast.current {
-        // Subtitle: concise current conditions
         subtitle = format!(
             "{:.0}\u{00B0} \u{2022} {}",
             current.temperature, current.description
         );
 
-        // Body: detailed info
         body.push_str(&format!(
-            "\u{1F321}\u{FE0F} {:.0}\u{00B0} (feels {:.0}\u{00B0})\n",
+            "{:.0}\u{00B0}  feels {:.0}\u{00B0}\n",
             current.temperature, current.feels_like
         ));
         body.push_str(&format!(
-            "\u{1F4A7} {}%  \u{1F32C}\u{FE0F} {:.0}mph\n",
+            "humidity {}%  wind {:.0}mph\n",
             current.humidity, current.wind_speed
         ));
     }
 
     if let Some(today) = forecast.daily.first() {
         body.push_str(&format!(
-            "\u{2B06}\u{FE0F} {:.0}\u{00B0}  \u{2B07}\u{FE0F} {:.0}\u{00B0}",
+            "\u{25B2} {:.0}\u{00B0}  \u{25BC} {:.0}\u{00B0}",
             today.temp_max, today.temp_min
         ));
         if today.precipitation_probability > 0.0 {
             body.push_str(&format!(
-                "  \u{2614} {:.0}%",
+                "  precip {:.0}%",
                 today.precipitation_probability * 100.0
             ));
         }
@@ -440,7 +438,7 @@ fn build_notification_message(
     }
 
     let priority = if !forecast.alerts.is_empty() {
-        body.push_str("\n\n\u{26A0}\u{FE0F} ALERTS:\n");
+        body.push_str("\n\nALERTS:\n");
         for alert in &forecast.alerts {
             body.push_str(&format!("\u{2022} {}\n", alert.event));
         }

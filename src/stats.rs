@@ -14,6 +14,7 @@ pub struct StatsResponse {
     pub devices: DeviceStats,
     pub scheduler: SchedulerStats,
     pub backfill: BackfillConfigStats,
+    pub database: DatabaseStats,
 }
 
 #[derive(Serialize)]
@@ -53,6 +54,33 @@ pub struct BackfillConfigStats {
     pub max_years: u32,
     pub daily_budget: u32,
     pub cron: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseStats {
+    pub size_bytes: u64,
+    pub size_human: String,
+}
+
+fn get_db_size(url: &str) -> (u64, String) {
+    let path = url.strip_prefix("sqlite:").unwrap_or(url);
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            let bytes = meta.len();
+            let human = if bytes < 1024 {
+                format!("{} B", bytes)
+            } else if bytes < 1024 * 1024 {
+                format!("{:.1} KB", bytes as f64 / 1024.0)
+            } else if bytes < 1024 * 1024 * 1024 {
+                format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+            } else {
+                format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+            };
+            (bytes, human)
+        }
+        Err(_) => (0, "unknown".to_string()),
+    }
 }
 
 pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
@@ -100,11 +128,18 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
         cron: state.config.history_backfill.cron.clone(),
     };
 
+    let (size_bytes, size_human) = get_db_size(&state.config.database_url);
+    let database = DatabaseStats {
+        size_bytes,
+        size_human,
+    };
+
     Json(StatsResponse {
         api_budget,
         history,
         devices,
         scheduler,
         backfill,
+        database,
     })
 }
