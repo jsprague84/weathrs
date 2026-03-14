@@ -176,6 +176,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize devices service backed by SQLite
     let devices_service = Arc::new(DevicesService::new(http_client.clone(), db_pool.clone()));
+    devices_service.cleanup_invalid_tokens().await;
     tracing::info!("Devices service initialized");
 
     // Initialize scheduler backed by SQLite

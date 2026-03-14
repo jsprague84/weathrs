@@ -70,6 +70,12 @@ pub struct ExpoPushResponse {
     pub data: Vec<ExpoPushTicket>,
 }
 
+/// Expo response when sending a single notification (data is an object, not array)
+#[derive(Debug, Deserialize)]
+pub struct ExpoPushSingleResponse {
+    pub data: ExpoPushTicket,
+}
+
 /// Individual push ticket
 #[derive(Debug, Deserialize)]
 pub struct ExpoPushTicket {
@@ -149,30 +155,32 @@ impl ExpoClient {
             )));
         }
 
-        let push_response: ExpoPushResponse = response.json().await?;
+        let body = response.text().await.unwrap_or_default();
 
-        if let Some(ticket) = push_response.data.into_iter().next() {
-            if ticket.status == "ok" {
-                tracing::info!(
-                    ticket_id = ?ticket.id,
-                    "Successfully sent Expo push notification"
-                );
-                Ok(ticket)
+        // Expo may return { data: { ... } } for single sends or { data: [ ... ] } for batches
+        let ticket: ExpoPushTicket =
+            if let Ok(resp) = serde_json::from_str::<ExpoPushResponse>(&body) {
+                resp.data.into_iter().next().ok_or_else(|| {
+                    NotificationError::ServiceError("No ticket in Expo response".to_string())
+                })?
+            } else if let Ok(resp) = serde_json::from_str::<ExpoPushSingleResponse>(&body) {
+                resp.data
             } else {
-                let error_msg = ticket
-                    .message
-                    .unwrap_or_else(|| "Unknown error".to_string());
-                tracing::error!(
-                    status = %ticket.status,
-                    message = %error_msg,
-                    "Expo push notification failed"
-                );
-                Err(NotificationError::ServiceError(error_msg))
-            }
+                return Err(NotificationError::ServiceError(format!(
+                    "Failed to parse Expo response: {}",
+                    body
+                )));
+            };
+
+        if ticket.status == "ok" {
+            tracing::info!(ticket_id = ?ticket.id, "Successfully sent Expo push notification");
+            Ok(ticket)
         } else {
-            Err(NotificationError::ServiceError(
-                "No ticket in Expo response".to_string(),
-            ))
+            let error_msg = ticket
+                .message
+                .unwrap_or_else(|| "Unknown error".to_string());
+            tracing::error!(status = %ticket.status, message = %error_msg, "Expo push notification failed");
+            Err(NotificationError::ServiceError(error_msg))
         }
     }
 

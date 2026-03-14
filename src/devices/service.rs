@@ -47,6 +47,22 @@ impl DevicesService {
             .as_secs() as i64
     }
 
+    /// Remove devices with invalid (non-Expo) push tokens
+    pub async fn cleanup_invalid_tokens(&self) {
+        let devices = self.get_all().await;
+        let mut removed = 0;
+        for device in &devices {
+            if !device.token.starts_with("ExponentPushToken[") {
+                if let Ok(true) = self.repo.remove(&device.token).await {
+                    removed += 1;
+                }
+            }
+        }
+        if removed > 0 {
+            tracing::info!(removed = removed, "Cleaned up devices with invalid tokens");
+        }
+    }
+
     /// Register a new device or update existing
     pub async fn register(
         &self,
