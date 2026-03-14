@@ -16,9 +16,9 @@ pub struct JobListResponse {
     pub count: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct TriggerRequest {
-    pub city: String,
+    pub city: Option<String>,
     pub units: Option<String>,
 }
 
@@ -118,11 +118,35 @@ pub async fn list_jobs(State(state): State<AppState>) -> Json<JobListResponse> {
 /// POST /scheduler/trigger
 pub async fn trigger_forecast(
     State(state): State<AppState>,
-    Json(request): Json<TriggerRequest>,
+    body: Option<Json<TriggerRequest>>,
 ) -> impl IntoResponse {
+    let request = body.map(|Json(r)| r).unwrap_or_default();
     let units = request.units.unwrap_or_else(|| state.config.units.clone());
 
-    if let Err(e) = state.scheduler_service.run_now(&request.city, &units).await {
+    // Resolve city: use provided city, or fall back to first enabled device's primary city
+    let city = if let Some(city) = request.city {
+        city
+    } else {
+        let devices = state.devices_service.get_all().await;
+        match devices
+            .iter()
+            .find(|d| d.enabled)
+            .and_then(|d| d.cities.first())
+        {
+            Some(c) => c.clone(),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "No city provided and no devices configured".to_string(),
+                    }),
+                )
+                    .into_response();
+            }
+        }
+    };
+
+    if let Err(e) = state.scheduler_service.run_now(&city, &units).await {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -136,7 +160,7 @@ pub async fn trigger_forecast(
         StatusCode::OK,
         Json(TriggerResponse {
             status: "success".to_string(),
-            message: format!("Forecast triggered for {}", request.city),
+            message: format!("Forecast triggered for {}", city),
         }),
     )
         .into_response()

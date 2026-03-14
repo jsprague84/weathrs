@@ -53,11 +53,14 @@ impl DevicesService {
 
         // Check if device already exists
         let device = if let Some(mut existing) = self.repo.get_by_token(&request.token).await? {
-            // Update existing device
+            // Update existing device — only overwrite cities if non-empty
+            // (token rotation re-registers without cities)
             existing.platform = request.platform;
-            existing.device_name = request.device_name;
-            existing.app_version = request.app_version;
-            existing.cities = request.cities;
+            existing.device_name = request.device_name.or(existing.device_name);
+            existing.app_version = request.app_version.or(existing.app_version);
+            if !request.cities.is_empty() {
+                existing.cities = request.cities;
+            }
             existing.units = request.units;
             existing.enabled = request.enabled;
             existing.updated_at = now;

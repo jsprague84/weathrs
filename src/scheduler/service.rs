@@ -330,7 +330,19 @@ impl SchedulerService {
             .await?;
 
         let message = build_notification_message(&forecast);
-        self.devices_service.send_to_city(city, &message).await?;
+
+        // Try the input city name first, then the geocoded name if different
+        let geocoded_city = &forecast.location.city;
+        let mut sent = self.devices_service.send_to_city(city, &message).await?;
+        if geocoded_city.to_lowercase() != city.to_lowercase() {
+            let extra = self
+                .devices_service
+                .send_to_city(geocoded_city, &message)
+                .await?;
+            sent += extra;
+        }
+
+        tracing::info!(city = %city, geocoded = %geocoded_city, sent = sent, "Manual trigger complete");
 
         Ok(())
     }
