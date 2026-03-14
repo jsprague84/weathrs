@@ -43,10 +43,6 @@ pub struct ExpoPushMessage {
     /// Notification body
     pub body: String,
 
-    /// Android accent color
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<String>,
-
     /// Custom data payload
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<PushNotificationData>,
@@ -137,7 +133,6 @@ impl ExpoClient {
             title: Some(message.title.clone()),
             subtitle: message.subtitle.clone(),
             body: message.body.clone(),
-            color: Some("#FF2196F3".to_string()),
             data: Self::build_data(message),
             priority: Some(Self::convert_priority(message.priority)),
             sound: Some("default".to_string()),
@@ -218,7 +213,6 @@ impl ExpoClient {
                     title: Some(message.title.clone()),
                     subtitle: message.subtitle.clone(),
                     body: message.body.clone(),
-                    color: Some("#FF2196F3".to_string()),
                     data: data.clone(),
                     priority: Some(Self::convert_priority(message.priority)),
                     sound: Some("default".to_string()),
