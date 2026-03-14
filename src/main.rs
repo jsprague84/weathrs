@@ -15,6 +15,7 @@ mod notifications;
 mod openapi;
 mod routes;
 mod scheduler;
+mod stats;
 mod weather;
 
 use axum::{
@@ -56,6 +57,7 @@ pub struct AppState {
     pub air_quality_service: Arc<AirQualityService>,
     pub config: Arc<AppConfig>,
     pub metrics_handle: PrometheusHandle,
+    pub api_budget: Arc<api_budget::ApiCallBudget>,
 }
 
 /// Create shared HTTP client with connection pooling
@@ -153,11 +155,13 @@ async fn main() -> anyhow::Result<()> {
     let weather_service = Arc::new(WeatherService::new(
         http_client.clone(),
         &config.openweathermap_api_key,
+        Arc::clone(&api_budget),
     ));
     let forecast_service = Arc::new(ForecastService::new(
         http_client.clone(),
         &config.openweathermap_api_key,
         geo_cache.clone(),
+        Arc::clone(&api_budget),
     ));
     let history_service = Arc::new(HistoryService::new(
         http_client.clone(),
@@ -172,6 +176,7 @@ async fn main() -> anyhow::Result<()> {
         http_client.clone(),
         &config.openweathermap_api_key,
         Arc::clone(&forecast_service),
+        Arc::clone(&api_budget),
     ));
 
     // Initialize devices service backed by SQLite
@@ -231,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
         air_quality_service,
         config: Arc::new(config.clone()),
         metrics_handle,
+        api_budget,
     };
 
     // Build CORS layer

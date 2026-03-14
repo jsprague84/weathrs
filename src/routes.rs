@@ -19,6 +19,7 @@ use crate::metrics::track_metrics;
 use crate::middleware::{require_api_key, DeviceApiKey};
 use crate::openapi::swagger_ui;
 use crate::scheduler::handlers as scheduler_handlers;
+use crate::stats;
 use crate::weather::handlers as weather_handlers;
 use crate::AppState;
 
@@ -147,6 +148,7 @@ pub fn api_v1_routes(
         .merge(history_routes())
         .merge(scheduler_routes(rate_limit))
         .merge(devices_routes(device_api_key))
+        .route("/stats", get(stats::get_stats))
 }
 
 /// Prometheus metrics scrape endpoint

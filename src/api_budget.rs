@@ -16,6 +16,10 @@ impl ApiCallBudget {
         }
     }
 
+    pub fn daily_limit(&self) -> u32 {
+        self.daily_limit
+    }
+
     /// Record an API call. Returns `true` if the call was within budget.
     pub fn record_call(&self) -> bool {
         self.maybe_reset();

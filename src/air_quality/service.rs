@@ -2,7 +2,10 @@ use axum::http::StatusCode;
 use reqwest::Client;
 use thiserror::Error;
 
+use std::sync::Arc;
+
 use super::models::*;
+use crate::api_budget::ApiCallBudget;
 use crate::error::HttpError;
 use crate::forecast::ForecastService;
 use crate::impl_into_response;
@@ -49,19 +52,22 @@ impl_into_response!(AirQualityError);
 pub struct AirQualityService {
     client: Client,
     api_key: String,
-    forecast_service: std::sync::Arc<ForecastService>,
+    forecast_service: Arc<ForecastService>,
+    api_budget: Arc<ApiCallBudget>,
 }
 
 impl AirQualityService {
     pub fn new(
         client: Client,
         api_key: &str,
-        forecast_service: std::sync::Arc<ForecastService>,
+        forecast_service: Arc<ForecastService>,
+        api_budget: Arc<ApiCallBudget>,
     ) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),
             forecast_service,
+            api_budget,
         }
     }
 
@@ -80,6 +86,8 @@ impl AirQualityService {
             lon = %location.lon,
             "Fetching air quality"
         );
+
+        self.api_budget.record_call();
 
         let response = self
             .client

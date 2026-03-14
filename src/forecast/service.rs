@@ -2,7 +2,10 @@ use axum::http::StatusCode;
 use reqwest::Client;
 use thiserror::Error;
 
+use std::sync::Arc;
+
 use super::models::*;
+use crate::api_budget::ApiCallBudget;
 use crate::cache::{normalize_cache_key, CachedGeoLocation, GeoCache};
 use crate::error::HttpError;
 use crate::impl_into_response;
@@ -57,14 +60,21 @@ pub struct ForecastService {
     client: Client,
     api_key: String,
     geo_cache: GeoCache,
+    api_budget: Arc<ApiCallBudget>,
 }
 
 impl ForecastService {
-    pub fn new(client: Client, api_key: &str, geo_cache: GeoCache) -> Self {
+    pub fn new(
+        client: Client,
+        api_key: &str,
+        geo_cache: GeoCache,
+        api_budget: Arc<ApiCallBudget>,
+    ) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),
             geo_cache,
+            api_budget,
         }
     }
 
@@ -201,6 +211,7 @@ impl ForecastService {
         );
 
         // Then fetch the forecast using One Call API
+        self.api_budget.record_call();
         metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall").increment(1);
         let response = self
             .client
@@ -241,6 +252,7 @@ impl ForecastService {
     ) -> Result<ForecastResponse, ForecastError> {
         let location = self.geocode(city).await?;
 
+        self.api_budget.record_call();
         metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall_daily")
             .increment(1);
         let response = self
@@ -278,6 +290,7 @@ impl ForecastService {
     ) -> Result<ForecastResponse, ForecastError> {
         let location = self.geocode(city).await?;
 
+        self.api_budget.record_call();
         metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "onecall_hourly")
             .increment(1);
         let response = self
@@ -497,7 +510,12 @@ mod tests {
     #[tokio::test]
     async fn test_transform_response_minimal() {
         let geo_cache = test_geo_cache().await;
-        let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
+        let service = ForecastService::new(
+            reqwest::Client::new(),
+            "test_api_key",
+            geo_cache,
+            std::sync::Arc::new(crate::api_budget::ApiCallBudget::new(1000)),
+        );
 
         let data = create_minimal_one_call_response();
         let location = create_test_location();
@@ -515,7 +533,12 @@ mod tests {
     #[tokio::test]
     async fn test_transform_response_with_current_weather() {
         let geo_cache = test_geo_cache().await;
-        let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
+        let service = ForecastService::new(
+            reqwest::Client::new(),
+            "test_api_key",
+            geo_cache,
+            std::sync::Arc::new(crate::api_budget::ApiCallBudget::new(1000)),
+        );
 
         let mut data = create_minimal_one_call_response();
         data.current = Some(CurrentWeather {
@@ -555,7 +578,12 @@ mod tests {
     #[tokio::test]
     async fn test_transform_response_with_alerts() {
         let geo_cache = test_geo_cache().await;
-        let service = ForecastService::new(reqwest::Client::new(), "test_api_key", geo_cache);
+        let service = ForecastService::new(
+            reqwest::Client::new(),
+            "test_api_key",
+            geo_cache,
+            std::sync::Arc::new(crate::api_budget::ApiCallBudget::new(1000)),
+        );
 
         let mut data = create_minimal_one_call_response();
         data.alerts = Some(vec![WeatherAlert {

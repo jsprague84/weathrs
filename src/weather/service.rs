@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use utoipa::ToSchema;
 
+use std::sync::Arc;
+
+use crate::api_budget::ApiCallBudget;
 use crate::error::HttpError;
 use crate::impl_into_response;
 
@@ -103,13 +106,15 @@ struct OpenWeatherMapError {
 pub struct WeatherService {
     client: Client,
     api_key: String,
+    api_budget: Arc<ApiCallBudget>,
 }
 
 impl WeatherService {
-    pub fn new(client: Client, api_key: &str) -> Self {
+    pub fn new(client: Client, api_key: &str, api_budget: Arc<ApiCallBudget>) -> Self {
         Self {
             client,
             api_key: api_key.to_string(),
+            api_budget,
         }
     }
 
@@ -129,6 +134,7 @@ impl WeatherService {
         units: &str,
     ) -> Result<WeatherResponse, WeatherError> {
         tracing::debug!(location = %location, units = %units, "Fetching weather data");
+        self.api_budget.record_call();
 
         // Build query based on whether input is zip code or city name
         let response = if Self::is_zip_code(location) {

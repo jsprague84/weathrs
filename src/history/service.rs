@@ -533,6 +533,10 @@ impl HistoryService {
         Ok(data.data)
     }
 
+    pub async fn get_stats(&self) -> Result<crate::db::history_repo::HistoryStats, HistoryError> {
+        self.repo.get_stats().await.map_err(db_err)
+    }
+
     /// Get missing days for a city within a time range.
     /// Returns midnight-UTC timestamps for days that have no data in the DB.
     pub async fn get_missing_days(

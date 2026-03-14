@@ -88,6 +88,26 @@ pub trait HistoryRepository: Send + Sync {
 
     /// Delete records older than the given timestamp
     async fn cleanup_old(&self, before_ts: i64) -> Result<usize, DbError>;
+
+    /// Get aggregate stats per city
+    async fn get_stats(&self) -> Result<HistoryStats, DbError>;
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryStats {
+    pub total_records: i64,
+    pub cities: Vec<CityHistoryStats>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CityHistoryStats {
+    pub city: String,
+    pub record_count: i64,
+    pub earliest_timestamp: i64,
+    pub latest_timestamp: i64,
+    pub missing_days: i64,
 }
 
 /// SQLite implementation of HistoryRepository
@@ -397,6 +417,54 @@ impl HistoryRepository for SqliteHistoryRepository {
 
         Ok(missing)
     }
+
+    async fn get_stats(&self) -> Result<HistoryStats, DbError> {
+        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM weather_history")
+            .fetch_one(&self.pool)
+            .await?;
+
+        let city_rows: Vec<CityStatsRow> = sqlx::query_as(
+            "SELECT city,
+                    COUNT(*) as record_count,
+                    MIN(timestamp) as earliest_timestamp,
+                    MAX(timestamp) as latest_timestamp,
+                    COUNT(DISTINCT date(timestamp, 'unixepoch')) as distinct_days
+             FROM weather_history
+             GROUP BY city
+             ORDER BY city",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let cities = city_rows
+            .into_iter()
+            .map(|r| {
+                let span_days = (r.latest_timestamp - r.earliest_timestamp) / 86400 + 1;
+                let missing_days = (span_days - r.distinct_days).max(0);
+                CityHistoryStats {
+                    city: r.city,
+                    record_count: r.record_count,
+                    earliest_timestamp: r.earliest_timestamp,
+                    latest_timestamp: r.latest_timestamp,
+                    missing_days,
+                }
+            })
+            .collect();
+
+        Ok(HistoryStats {
+            total_records: total.0,
+            cities,
+        })
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct CityStatsRow {
+    city: String,
+    record_count: i64,
+    earliest_timestamp: i64,
+    latest_timestamp: i64,
+    distinct_days: i64,
 }
 
 #[cfg(test)]
