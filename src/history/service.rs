@@ -18,17 +18,16 @@ const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip"
 const TIMEMACHINE_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall/timemachine";
 
 /// Maximum number of API calls (days) per request to avoid OWM throttling.
-/// Set to 90 to cover the maximum supported period (90d) in a single request.
-const MAX_DAYS_PER_REQUEST: usize = 90;
+const MAX_DAYS_PER_REQUEST: usize = 800;
 
 /// Default history range: 7 days
 const DEFAULT_RANGE_DAYS: i64 = 7;
 
-/// Maximum date range for hourly history requests: 90 days
-const MAX_HOURLY_RANGE_DAYS: i64 = 90;
+/// Maximum date range for hourly history requests: 800 days
+const MAX_HOURLY_RANGE_DAYS: i64 = 800;
 
-/// Maximum date range for daily history requests: 365 days
-const MAX_DAILY_RANGE_DAYS: i64 = 365;
+/// Maximum date range for daily history requests: 800 days
+const MAX_DAILY_RANGE_DAYS: i64 = 800;
 
 #[derive(Error, Debug)]
 pub enum HistoryError {
@@ -356,10 +355,11 @@ impl HistoryService {
                 ));
             }
             let range_days = (e - s) / 86400;
-            if range_days > 365 {
-                return Err(HistoryError::InvalidDateRange(
-                    "custom range cannot exceed 365 days".to_string(),
-                ));
+            if range_days > MAX_DAILY_RANGE_DAYS {
+                return Err(HistoryError::InvalidDateRange(format!(
+                    "custom range cannot exceed {} days",
+                    MAX_DAILY_RANGE_DAYS
+                )));
             }
             (s, e)
         } else {
@@ -440,11 +440,10 @@ impl HistoryService {
             "Backfilling history data"
         );
 
-        // Limit API calls per request (one call per day)
-        let days_to_fetch: Vec<i64> = missing_days
-            .into_iter()
-            .take(MAX_DAYS_PER_REQUEST)
-            .collect();
+        // Limit to the smaller of MAX_DAYS_PER_REQUEST or remaining API budget
+        let budget_remaining = self.api_budget.remaining() as usize;
+        let limit = MAX_DAYS_PER_REQUEST.min(budget_remaining);
+        let days_to_fetch: Vec<i64> = missing_days.into_iter().take(limit).collect();
 
         let mut records = Vec::new();
         let now = chrono::Utc::now().timestamp();
