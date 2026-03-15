@@ -160,15 +160,16 @@ impl SchedulerService {
                             if should_notify {
                                 let message = build_notification_message(&forecast);
 
-                                // Send to Expo push (devices subscribed to this city)
-                                match devices_service.send_to_city(&city, &message).await {
-                                    Ok(count) => {
-                                        tracing::info!(city = %city, count = count, "Sent push notifications");
-                                    }
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "Failed to send push notifications");
-                                    }
+                                // Send to devices subscribed to this city, geocoded name, or broadcast as fallback
+                                let geocoded = &forecast.location.city;
+                                let mut sent = devices_service.send_to_city(&city, &message).await.unwrap_or(0);
+                                if sent == 0 && geocoded.to_lowercase() != city.to_lowercase() {
+                                    sent = devices_service.send_to_city(geocoded, &message).await.unwrap_or(0);
                                 }
+                                if sent == 0 {
+                                    sent = devices_service.broadcast(&message).await.unwrap_or(0);
+                                }
+                                tracing::info!(city = %city, geocoded = %geocoded, sent = sent, "Sent push notifications");
                             }
                         }
                         Err(e) => {
