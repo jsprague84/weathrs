@@ -67,7 +67,12 @@ pub trait HistoryRepository: Send + Sync {
     async fn insert_batch(&self, records: &[HistoryRecord]) -> Result<usize, DbError>;
 
     /// Check if data exists for a specific location, timestamp, and units
-    async fn has_data(&self, location_key: &str, timestamp: i64, units: &str) -> Result<bool, DbError>;
+    async fn has_data(
+        &self,
+        location_key: &str,
+        timestamp: i64,
+        units: &str,
+    ) -> Result<bool, DbError>;
 
     /// Find timestamps in a range that are missing from the database
     async fn get_missing_timestamps(
@@ -314,7 +319,12 @@ impl HistoryRepository for SqliteHistoryRepository {
         Ok(inserted)
     }
 
-    async fn has_data(&self, location_key: &str, timestamp: i64, units: &str) -> Result<bool, DbError> {
+    async fn has_data(
+        &self,
+        location_key: &str,
+        timestamp: i64,
+        units: &str,
+    ) -> Result<bool, DbError> {
         let row: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM weather_history WHERE location_key = ? AND timestamp = ? AND units = ?",
         )
@@ -629,7 +639,10 @@ mod tests {
         let deleted = repo.cleanup_old(2500).await.unwrap();
         assert_eq!(deleted, 2);
 
-        let remaining = repo.get_range(TEST_LOCATION_KEY, 0, 5000, "metric").await.unwrap();
+        let remaining = repo
+            .get_range(TEST_LOCATION_KEY, 0, 5000, "metric")
+            .await
+            .unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].timestamp, 3000);
     }

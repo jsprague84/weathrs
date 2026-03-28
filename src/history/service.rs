@@ -146,7 +146,10 @@ impl HistoryService {
         if parts.len() != 2 {
             return false;
         }
-        if let (Ok(lat), Ok(lon)) = (parts[0].trim().parse::<f64>(), parts[1].trim().parse::<f64>()) {
+        if let (Ok(lat), Ok(lon)) = (
+            parts[0].trim().parse::<f64>(),
+            parts[1].trim().parse::<f64>(),
+        ) {
             (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
         } else {
             false
@@ -285,9 +288,10 @@ impl HistoryService {
         }
 
         let locations: Vec<GeoLocation> = response.json().await?;
-        locations.into_iter().next().ok_or_else(|| {
-            HistoryError::CityNotFound(format!("{},{}", lat, lon))
-        })
+        locations
+            .into_iter()
+            .next()
+            .ok_or_else(|| HistoryError::CityNotFound(format!("{},{}", lat, lon)))
     }
 
     /// Get hourly history data for a city within a time range

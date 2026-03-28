@@ -88,7 +88,10 @@ impl ForecastService {
         if parts.len() != 2 {
             return false;
         }
-        if let (Ok(lat), Ok(lon)) = (parts[0].trim().parse::<f64>(), parts[1].trim().parse::<f64>()) {
+        if let (Ok(lat), Ok(lon)) = (
+            parts[0].trim().parse::<f64>(),
+            parts[1].trim().parse::<f64>(),
+        ) {
             (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
         } else {
             false
@@ -249,9 +252,10 @@ impl ForecastService {
         }
 
         let locations: Vec<GeoLocation> = response.json().await?;
-        locations.into_iter().next().ok_or_else(|| {
-            ForecastError::CityNotFound(format!("{},{}", lat, lon))
-        })
+        locations
+            .into_iter()
+            .next()
+            .ok_or_else(|| ForecastError::CityNotFound(format!("{},{}", lat, lon)))
     }
 
     /// Get full forecast using One Call API 3.0

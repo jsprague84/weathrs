@@ -72,11 +72,9 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), DbError> {
     // Migration 004: Add location_key column with backfill and dedup.
     // The ALTER TABLE ADD COLUMN is not idempotent in SQLite, so we attempt it
     // separately and ignore "duplicate column" errors on subsequent runs.
-    let _ = sqlx::raw_sql(
-        "ALTER TABLE weather_history ADD COLUMN location_key TEXT;"
-    )
-    .execute(pool)
-    .await;
+    let _ = sqlx::raw_sql("ALTER TABLE weather_history ADD COLUMN location_key TEXT;")
+        .execute(pool)
+        .await;
 
     let migration_004 = include_str!("../../migrations/004_add_location_key.sql");
     sqlx::raw_sql(migration_004)

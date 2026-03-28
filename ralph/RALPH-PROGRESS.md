@@ -14,4 +14,4 @@
 | TASK 10: Canonical metric units for backfill | **done** | Store metric, convert on read |
 | TASK 11: Reduce default budget to 800 | **done** | 800 backfill + 200 reserved for user |
 | TASK 12: Update mobile stats with new improvements | **done** | Cache TTL info added |
-| FINAL VERIFICATION | pending | |
+| FINAL VERIFICATION | **done** | All clean, patterns verified against docs |
