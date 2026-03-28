@@ -106,6 +106,7 @@ pub struct HistoryStats {
 #[serde(rename_all = "camelCase")]
 pub struct CityHistoryStats {
     pub city: String,
+    pub location_key: String,
     pub record_count: i64,
     pub earliest_timestamp: i64,
     pub latest_timestamp: i64,
@@ -430,14 +431,13 @@ impl HistoryRepository for SqliteHistoryRepository {
             .await?;
 
         let city_rows: Vec<CityStatsRow> = sqlx::query_as(
-            "SELECT city,
-                    COUNT(*) as record_count,
+            "SELECT city, location_key, COUNT(*) as record_count,
                     MIN(timestamp) as earliest_timestamp,
                     MAX(timestamp) as latest_timestamp,
                     COUNT(DISTINCT date(timestamp, 'unixepoch')) as distinct_days
              FROM weather_history
-             GROUP BY city
-             ORDER BY city",
+             GROUP BY location_key
+             ORDER BY record_count DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -449,6 +449,7 @@ impl HistoryRepository for SqliteHistoryRepository {
                 let missing_days = (span_days - r.distinct_days).max(0);
                 CityHistoryStats {
                     city: r.city,
+                    location_key: r.location_key,
                     record_count: r.record_count,
                     earliest_timestamp: r.earliest_timestamp,
                     latest_timestamp: r.latest_timestamp,
@@ -467,6 +468,7 @@ impl HistoryRepository for SqliteHistoryRepository {
 #[derive(sqlx::FromRow)]
 struct CityStatsRow {
     city: String,
+    location_key: String,
     record_count: i64,
     earliest_timestamp: i64,
     latest_timestamp: i64,
