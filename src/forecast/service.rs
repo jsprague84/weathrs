@@ -88,7 +88,11 @@ impl ForecastService {
         if parts.len() != 2 {
             return false;
         }
-        parts[0].trim().parse::<f64>().is_ok() && parts[1].trim().parse::<f64>().is_ok()
+        if let (Ok(lat), Ok(lon)) = (parts[0].trim().parse::<f64>(), parts[1].trim().parse::<f64>()) {
+            (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
+        } else {
+            false
+        }
     }
 
     /// Check if input looks like a zip code (digits only, or digits,country)
@@ -218,7 +222,6 @@ impl ForecastService {
 
     /// Reverse geocode coordinates to a location name
     async fn reverse_geocode(&self, lat: f64, lon: f64) -> Result<GeoLocation, ForecastError> {
-        self.api_budget.record_call();
         metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "geocoding_reverse")
             .increment(1);
 
