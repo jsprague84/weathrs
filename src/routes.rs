@@ -156,6 +156,7 @@ pub fn api_v1_routes(
         .merge(scheduler_routes(rate_limit))
         .merge(devices_routes(device_api_key))
         .route("/stats", get(stats::get_stats))
+        .route("/stats/tiles", post(stats::report_tiles))
 }
 
 /// Prometheus metrics scrape endpoint

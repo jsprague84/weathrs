@@ -63,6 +63,14 @@ pub struct AppConfig {
     /// CORS allowed origins (empty = allow all)
     #[serde(default)]
     pub cors_allowed_origins: Vec<String>,
+
+    /// Daily tile limit for OpenWeatherMap map tiles
+    #[serde(default = "default_owm_tile_daily_limit")]
+    pub owm_tile_daily_limit: u32,
+
+    /// Daily tile limit for Google Maps tiles
+    #[serde(default = "default_google_maps_tile_daily_limit")]
+    pub google_maps_tile_daily_limit: u32,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -234,6 +242,14 @@ fn default_false() -> bool {
 
 fn default_history_retention_days() -> u32 {
     90
+}
+
+fn default_owm_tile_daily_limit() -> u32 {
+    1000
+}
+
+fn default_google_maps_tile_daily_limit() -> u32 {
+    28500
 }
 
 impl AppConfig {

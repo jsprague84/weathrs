@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use axum::{extract::State, Json};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::db::history_repo::CityHistoryStats;
 use crate::AppState;
@@ -10,6 +10,7 @@ use crate::AppState;
 #[serde(rename_all = "camelCase")]
 pub struct StatsResponse {
     pub api_budget: ApiBudgetStats,
+    pub tile_usage: TileUsageStats,
     pub history: HistoryStatsResponse,
     pub devices: DeviceStats,
     pub scheduler: SchedulerStats,
@@ -61,6 +62,20 @@ pub struct BackfillConfigStats {
 pub struct DatabaseStats {
     pub size_bytes: u64,
     pub size_human: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TileUsageStats {
+    pub owm_tiles: TileBudget,
+    pub google_maps_tiles: TileBudget,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TileBudget {
+    pub used_today: i64,
+    pub daily_limit: u32,
 }
 
 fn get_db_size(url: &str) -> (u64, String) {
@@ -134,12 +149,58 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
         size_human,
     };
 
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let tile_row: Option<(i64, i64)> =
+        sqlx::query_as("SELECT owm_tiles, google_maps_tiles FROM tile_usage WHERE date = ?")
+            .bind(&today)
+            .fetch_optional(&state.db_pool)
+            .await
+            .unwrap_or(None);
+
+    let tile_usage = TileUsageStats {
+        owm_tiles: TileBudget {
+            used_today: tile_row.map(|r| r.0).unwrap_or(0),
+            daily_limit: state.config.owm_tile_daily_limit,
+        },
+        google_maps_tiles: TileBudget {
+            used_today: tile_row.map(|r| r.1).unwrap_or(0),
+            daily_limit: state.config.google_maps_tile_daily_limit,
+        },
+    };
+
     Json(StatsResponse {
         api_budget,
+        tile_usage,
         history,
         devices,
         scheduler,
         backfill,
         database,
     })
+}
+
+#[derive(Deserialize)]
+pub struct TileReport {
+    pub owm_tiles: i64,
+    pub google_maps_tiles: i64,
+}
+
+pub async fn report_tiles(
+    State(state): State<AppState>,
+    Json(report): Json<TileReport>,
+) -> Json<serde_json::Value> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let _ = sqlx::query(
+        "INSERT INTO tile_usage (date, owm_tiles, google_maps_tiles) VALUES (?, ?, ?)
+         ON CONFLICT(date) DO UPDATE SET
+           owm_tiles = owm_tiles + excluded.owm_tiles,
+           google_maps_tiles = google_maps_tiles + excluded.google_maps_tiles",
+    )
+    .bind(&today)
+    .bind(report.owm_tiles)
+    .bind(report.google_maps_tiles)
+    .execute(&state.db_pool)
+    .await;
+
+    Json(serde_json::json!({ "success": true }))
 }
