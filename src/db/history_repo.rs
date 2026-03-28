@@ -442,10 +442,15 @@ impl HistoryRepository for SqliteHistoryRepository {
             .await?;
 
         let city_rows: Vec<CityStatsRow> = sqlx::query_as(
-            "SELECT city, location_key, COUNT(*) as record_count,
-                    MIN(timestamp) as earliest_timestamp,
-                    MAX(timestamp) as latest_timestamp,
-                    COUNT(DISTINCT date(timestamp, 'unixepoch')) as distinct_days
+            "SELECT
+               (SELECT city FROM weather_history h2
+                WHERE h2.location_key = weather_history.location_key
+                GROUP BY city ORDER BY COUNT(*) DESC LIMIT 1) as city,
+               location_key,
+               COUNT(*) as record_count,
+               MIN(timestamp) as earliest_timestamp,
+               MAX(timestamp) as latest_timestamp,
+               COUNT(DISTINCT date(timestamp, 'unixepoch')) as distinct_days
              FROM weather_history
              GROUP BY location_key
              ORDER BY record_count DESC",
