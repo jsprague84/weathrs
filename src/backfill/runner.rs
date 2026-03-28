@@ -6,6 +6,7 @@ use tokio_cron_scheduler::Job;
 use crate::api_budget::ApiCallBudget;
 use crate::config::HistoryBackfillConfig;
 use crate::devices::DevicesService;
+use crate::geocode::models::make_location_key;
 use crate::history::HistoryService;
 use crate::scheduler::{SchedulerError, SchedulerService};
 
@@ -81,6 +82,7 @@ async fn run_backfill(
 
     let mut total_inserted: usize = 0;
     let units = "metric";
+    let mut seen_locations = IndexSet::new();
 
     for city in &cities {
         if budget.remaining() == 0 {
@@ -97,10 +99,21 @@ async fn run_backfill(
             }
         };
         let city_name = location.name.clone();
+        let location_key = make_location_key(location.lat, location.lon);
+
+        // Skip if we already processed this physical location
+        if !seen_locations.insert(location_key.clone()) {
+            tracing::debug!(
+                city = %city,
+                location_key = %location_key,
+                "Backfill: duplicate location, skipping"
+            );
+            continue;
+        }
 
         // Get missing days
         let missing_days = match history_service
-            .get_missing_days(&city_name, start_ts, end_ts, units)
+            .get_missing_days(&location_key, start_ts, end_ts, units)
             .await
         {
             Ok(days) => days,

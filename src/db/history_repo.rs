@@ -2,11 +2,13 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use super::DbError;
+use crate::geocode::models::make_location_key;
 
 /// A single weather history record stored in SQLite
 #[derive(Debug, Clone)]
 pub struct HistoryRecord {
     pub city: String,
+    pub location_key: String,
     pub lat: f64,
     pub lon: f64,
     pub timestamp: i64,
@@ -43,19 +45,19 @@ pub struct DailySummaryRow {
 #[allow(dead_code)]
 #[async_trait]
 pub trait HistoryRepository: Send + Sync {
-    /// Get history records for a city within a time range
+    /// Get history records for a location within a time range
     async fn get_range(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
     ) -> Result<Vec<HistoryRecord>, DbError>;
 
-    /// Get daily summaries (aggregated) for a city within a time range
+    /// Get daily summaries (aggregated) for a location within a time range
     async fn get_daily_summary(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
@@ -64,13 +66,13 @@ pub trait HistoryRepository: Send + Sync {
     /// Insert a batch of records, ignoring duplicates
     async fn insert_batch(&self, records: &[HistoryRecord]) -> Result<usize, DbError>;
 
-    /// Check if data exists for a specific city, timestamp, and units
-    async fn has_data(&self, city: &str, timestamp: i64, units: &str) -> Result<bool, DbError>;
+    /// Check if data exists for a specific location, timestamp, and units
+    async fn has_data(&self, location_key: &str, timestamp: i64, units: &str) -> Result<bool, DbError>;
 
     /// Find timestamps in a range that are missing from the database
     async fn get_missing_timestamps(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         interval_secs: i64,
@@ -80,7 +82,7 @@ pub trait HistoryRepository: Send + Sync {
     /// Find days (as midnight UTC timestamps) in a range that have no data
     async fn get_missing_days(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
@@ -125,6 +127,7 @@ impl SqliteHistoryRepository {
 #[derive(sqlx::FromRow)]
 struct HistoryRow {
     city: String,
+    location_key: String,
     lat: f64,
     lon: f64,
     timestamp: i64,
@@ -148,6 +151,7 @@ impl From<HistoryRow> for HistoryRecord {
     fn from(row: HistoryRow) -> Self {
         HistoryRecord {
             city: row.city,
+            location_key: row.location_key,
             lat: row.lat,
             lon: row.lon,
             timestamp: row.timestamp,
@@ -196,20 +200,20 @@ struct DateRow {
 impl HistoryRepository for SqliteHistoryRepository {
     async fn get_range(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
     ) -> Result<Vec<HistoryRecord>, DbError> {
         let rows: Vec<HistoryRow> = sqlx::query_as(
-            "SELECT city, lat, lon, timestamp, temperature, feels_like, humidity, pressure,
+            "SELECT city, location_key, lat, lon, timestamp, temperature, feels_like, humidity, pressure,
                     wind_speed, wind_direction, clouds, visibility, description, icon,
                     rain_1h, snow_1h, units, fetched_at
              FROM weather_history
-             WHERE city = ? AND timestamp >= ? AND timestamp <= ? AND units = ?
+             WHERE location_key = ? AND timestamp >= ? AND timestamp <= ? AND units = ?
              ORDER BY timestamp ASC",
         )
-        .bind(city)
+        .bind(location_key)
         .bind(start_ts)
         .bind(end_ts)
         .bind(units)
@@ -221,7 +225,7 @@ impl HistoryRepository for SqliteHistoryRepository {
 
     async fn get_daily_summary(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
@@ -236,18 +240,18 @@ impl HistoryRepository for SqliteHistoryRepository {
                 AVG(wind_speed) as wind_speed_avg,
                 COALESCE(SUM(COALESCE(rain_1h, 0.0) + COALESCE(snow_1h, 0.0)), 0.0) as precipitation_total,
                 (SELECT h2.description FROM weather_history h2
-                 WHERE h2.city = weather_history.city
+                 WHERE h2.location_key = weather_history.location_key
                    AND date(h2.timestamp, 'unixepoch') = date(weather_history.timestamp, 'unixepoch')
                    AND h2.units = weather_history.units
                  GROUP BY h2.description
                  ORDER BY COUNT(*) DESC
                  LIMIT 1) as dominant_condition
              FROM weather_history
-             WHERE city = ? AND timestamp >= ? AND timestamp <= ? AND units = ?
+             WHERE location_key = ? AND timestamp >= ? AND timestamp <= ? AND units = ?
              GROUP BY date(timestamp, 'unixepoch')
              ORDER BY date ASC",
         )
-        .bind(city)
+        .bind(location_key)
         .bind(start_ts)
         .bind(end_ts)
         .bind(units)
@@ -272,14 +276,16 @@ impl HistoryRepository for SqliteHistoryRepository {
     async fn insert_batch(&self, records: &[HistoryRecord]) -> Result<usize, DbError> {
         let mut inserted = 0;
         for record in records {
+            let location_key = make_location_key(record.lat, record.lon);
             let result = sqlx::query(
                 "INSERT OR IGNORE INTO weather_history
-                 (city, lat, lon, timestamp, temperature, feels_like, humidity, pressure,
+                 (city, location_key, lat, lon, timestamp, temperature, feels_like, humidity, pressure,
                   wind_speed, wind_direction, clouds, visibility, description, icon,
                   rain_1h, snow_1h, units, fetched_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&record.city)
+            .bind(&location_key)
             .bind(record.lat)
             .bind(record.lon)
             .bind(record.timestamp)
@@ -307,11 +313,11 @@ impl HistoryRepository for SqliteHistoryRepository {
         Ok(inserted)
     }
 
-    async fn has_data(&self, city: &str, timestamp: i64, units: &str) -> Result<bool, DbError> {
+    async fn has_data(&self, location_key: &str, timestamp: i64, units: &str) -> Result<bool, DbError> {
         let row: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM weather_history WHERE city = ? AND timestamp = ? AND units = ?",
+            "SELECT COUNT(*) FROM weather_history WHERE location_key = ? AND timestamp = ? AND units = ?",
         )
-        .bind(city)
+        .bind(location_key)
         .bind(timestamp)
         .bind(units)
         .fetch_one(&self.pool)
@@ -322,7 +328,7 @@ impl HistoryRepository for SqliteHistoryRepository {
 
     async fn get_missing_timestamps(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         interval_secs: i64,
@@ -331,9 +337,9 @@ impl HistoryRepository for SqliteHistoryRepository {
         // Get existing timestamps in the range
         let existing: Vec<TimestampRow> = sqlx::query_as(
             "SELECT timestamp FROM weather_history
-             WHERE city = ? AND timestamp >= ? AND timestamp <= ? AND units = ?",
+             WHERE location_key = ? AND timestamp >= ? AND timestamp <= ? AND units = ?",
         )
-        .bind(city)
+        .bind(location_key)
         .bind(start_ts)
         .bind(end_ts)
         .bind(units)
@@ -367,7 +373,7 @@ impl HistoryRepository for SqliteHistoryRepository {
 
     async fn get_missing_days(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
@@ -376,9 +382,9 @@ impl HistoryRepository for SqliteHistoryRepository {
         let rows: Vec<DateRow> = sqlx::query_as(
             "SELECT DISTINCT date(timestamp, 'unixepoch') as date_str
              FROM weather_history
-             WHERE city = ? AND timestamp >= ? AND timestamp <= ? AND units = ?",
+             WHERE location_key = ? AND timestamp >= ? AND timestamp <= ? AND units = ?",
         )
-        .bind(city)
+        .bind(location_key)
         .bind(start_ts)
         .bind(end_ts)
         .bind(units)
@@ -485,6 +491,7 @@ mod tests {
     fn create_test_record(city: &str, timestamp: i64) -> HistoryRecord {
         HistoryRecord {
             city: city.to_string(),
+            location_key: make_location_key(41.8781, -87.6298),
             lat: 41.8781,
             lon: -87.6298,
             timestamp,
@@ -505,6 +512,9 @@ mod tests {
         }
     }
 
+    /// Location key for test records (lat=41.8781, lon=-87.6298)
+    const TEST_LOCATION_KEY: &str = "41.88,-87.63";
+
     #[tokio::test]
     async fn test_insert_and_get_range() {
         let pool = setup_test_db().await;
@@ -520,7 +530,7 @@ mod tests {
         assert_eq!(inserted, 3);
 
         let result = repo
-            .get_range("Chicago", 1700000000, 1700007200, "metric")
+            .get_range(TEST_LOCATION_KEY, 1700000000, 1700007200, "metric")
             .await
             .unwrap();
         assert_eq!(result.len(), 3);
@@ -571,7 +581,7 @@ mod tests {
         repo.insert_batch(&records).await.unwrap();
 
         let summaries = repo
-            .get_daily_summary("Chicago", day1_base, day2_base + 86400, "metric")
+            .get_daily_summary(TEST_LOCATION_KEY, day1_base, day2_base + 86400, "metric")
             .await
             .unwrap();
 
@@ -594,7 +604,7 @@ mod tests {
         repo.insert_batch(&records).await.unwrap();
 
         let missing = repo
-            .get_missing_timestamps("Chicago", base, base + 7200, 3600, "metric")
+            .get_missing_timestamps(TEST_LOCATION_KEY, base, base + 7200, 3600, "metric")
             .await
             .unwrap();
 
@@ -617,7 +627,7 @@ mod tests {
         let deleted = repo.cleanup_old(2500).await.unwrap();
         assert_eq!(deleted, 2);
 
-        let remaining = repo.get_range("Chicago", 0, 5000, "metric").await.unwrap();
+        let remaining = repo.get_range(TEST_LOCATION_KEY, 0, 5000, "metric").await.unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].timestamp, 3000);
     }

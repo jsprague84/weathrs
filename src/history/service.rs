@@ -11,6 +11,7 @@ use crate::cache::{normalize_cache_key, CachedGeoLocation, GeoCache};
 use crate::db::history_repo::{HistoryRecord, HistoryRepository, SqliteHistoryRepository};
 use crate::error::HttpError;
 use crate::forecast::models::GeoLocation;
+use crate::geocode::models::make_location_key;
 use crate::impl_into_response;
 
 const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
@@ -92,6 +93,7 @@ fn to_record(
 ) -> HistoryRecord {
     HistoryRecord {
         city: city.to_string(),
+        location_key: make_location_key(lat, lon),
         lat,
         lon,
         timestamp: dp.dt,
@@ -247,6 +249,7 @@ impl HistoryService {
 
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
+        let location_key = make_location_key(location.lat, location.lon);
 
         // Always store/query in metric (canonical units)
         self.backfill_data(&city_name, &location, start_ts, end_ts, "metric")
@@ -254,7 +257,7 @@ impl HistoryService {
 
         let records = self
             .repo
-            .get_range(&city_name, start_ts, end_ts, "metric")
+            .get_range(&location_key, start_ts, end_ts, "metric")
             .await
             .map_err(db_err)?;
 
@@ -303,13 +306,14 @@ impl HistoryService {
 
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
+        let location_key = make_location_key(location.lat, location.lon);
 
         self.backfill_data(&city_name, &location, start_ts, end_ts, "metric")
             .await?;
 
         let summaries = self
             .repo
-            .get_daily_summary(&city_name, start_ts, end_ts, "metric")
+            .get_daily_summary(&location_key, start_ts, end_ts, "metric")
             .await
             .map_err(db_err)?;
 
@@ -378,13 +382,14 @@ impl HistoryService {
 
         let location = self.geocode(city).await?;
         let city_name = location.name.clone();
+        let location_key = make_location_key(location.lat, location.lon);
 
         self.backfill_data(&city_name, &location, start_ts, end_ts, "metric")
             .await?;
 
         let summaries = self
             .repo
-            .get_daily_summary(&city_name, start_ts, end_ts, "metric")
+            .get_daily_summary(&location_key, start_ts, end_ts, "metric")
             .await
             .map_err(db_err)?;
 
@@ -424,9 +429,10 @@ impl HistoryService {
         end_ts: i64,
         units: &str,
     ) -> Result<(), HistoryError> {
+        let location_key = make_location_key(location.lat, location.lon);
         let missing_days = self
             .repo
-            .get_missing_days(city, start_ts, end_ts, units)
+            .get_missing_days(&location_key, start_ts, end_ts, units)
             .await
             .map_err(db_err)?;
 
@@ -535,17 +541,18 @@ impl HistoryService {
         self.repo.get_stats().await.map_err(db_err)
     }
 
-    /// Get missing days for a city within a time range.
+    /// Get missing days for a location within a time range.
     /// Returns midnight-UTC timestamps for days that have no data in the DB.
+    /// The `location_key` should be a canonical key from `make_location_key()`.
     pub async fn get_missing_days(
         &self,
-        city: &str,
+        location_key: &str,
         start_ts: i64,
         end_ts: i64,
         units: &str,
     ) -> Result<Vec<i64>, HistoryError> {
         self.repo
-            .get_missing_days(city, start_ts, end_ts, units)
+            .get_missing_days(location_key, start_ts, end_ts, units)
             .await
             .map_err(db_err)
     }
