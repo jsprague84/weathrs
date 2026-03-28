@@ -16,6 +16,7 @@ use crate::impl_into_response;
 
 const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
 const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
+const REVERSE_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/reverse";
 const TIMEMACHINE_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall/timemachine";
 
 /// Maximum number of API calls (days) per request to avoid OWM throttling.
@@ -139,7 +140,30 @@ impl HistoryService {
         }
     }
 
+    /// Check if input looks like "lat,lon" coordinates (e.g., "41.51,-90.77")
+    fn is_coordinates(input: &str) -> bool {
+        let parts: Vec<&str> = input.split(',').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+        if let (Ok(lat), Ok(lon)) = (parts[0].trim().parse::<f64>(), parts[1].trim().parse::<f64>()) {
+            (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)
+        } else {
+            false
+        }
+    }
+
+    fn is_zip_code(input: &str) -> bool {
+        let parts: Vec<&str> = input.split(',').collect();
+        match parts.as_slice() {
+            [zip] => zip.trim().chars().all(|c| c.is_ascii_digit()),
+            [zip, _country] => zip.trim().chars().all(|c| c.is_ascii_digit()),
+            _ => false,
+        }
+    }
+
     /// Geocode a location string to coordinates (reuses ForecastService pattern)
+    /// Supports city names ("Chicago"), zip codes ("60601"), and coordinates ("41.88,-87.63")
     pub async fn geocode(&self, location: &str) -> Result<GeoLocation, HistoryError> {
         let cache_key = normalize_cache_key(location);
 
@@ -153,7 +177,16 @@ impl HistoryService {
             });
         }
 
-        let result = if Self::is_zip_code(location) {
+        let result = if Self::is_coordinates(location) {
+            let parts: Vec<&str> = location.split(',').collect();
+            let lat: f64 = parts[0].trim().parse().map_err(|_| {
+                HistoryError::ApiError(format!("Invalid latitude in '{}'", location))
+            })?;
+            let lon: f64 = parts[1].trim().parse().map_err(|_| {
+                HistoryError::ApiError(format!("Invalid longitude in '{}'", location))
+            })?;
+            self.reverse_geocode(lat, lon).await
+        } else if Self::is_zip_code(location) {
             self.geocode_zip(location).await
         } else {
             self.geocode_city(location).await
@@ -173,15 +206,6 @@ impl HistoryService {
             .await;
 
         Ok(result)
-    }
-
-    fn is_zip_code(input: &str) -> bool {
-        let parts: Vec<&str> = input.split(',').collect();
-        match parts.as_slice() {
-            [zip] => zip.trim().chars().all(|c| c.is_ascii_digit()),
-            [zip, _country] => zip.trim().chars().all(|c| c.is_ascii_digit()),
-            _ => false,
-        }
     }
 
     async fn geocode_city(&self, city: &str) -> Result<GeoLocation, HistoryError> {
@@ -231,6 +255,39 @@ impl HistoryService {
 
         let location: crate::forecast::models::ZipGeoLocation = response.json().await?;
         Ok(location.into())
+    }
+
+    /// Reverse geocode coordinates to a location name
+    async fn reverse_geocode(&self, lat: f64, lon: f64) -> Result<GeoLocation, HistoryError> {
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "geocoding_reverse")
+            .increment(1);
+
+        tracing::debug!(lat = %lat, lon = %lon, "Reverse geocoding coordinates");
+
+        let response = self
+            .client
+            .get(REVERSE_GEOCODING_API_URL)
+            .query(&[
+                ("lat", lat.to_string()),
+                ("lon", lon.to_string()),
+                ("limit", "1".to_string()),
+                ("appid", self.api_key.clone()),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(HistoryError::ApiError(format!(
+                "Reverse geocoding failed: {}",
+                text
+            )));
+        }
+
+        let locations: Vec<GeoLocation> = response.json().await?;
+        locations.into_iter().next().ok_or_else(|| {
+            HistoryError::CityNotFound(format!("{},{}", lat, lon))
+        })
     }
 
     /// Get hourly history data for a city within a time range

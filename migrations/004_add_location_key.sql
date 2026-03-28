@@ -1,6 +1,7 @@
 -- Backfill location_key from existing lat/lon (rounded to 2 decimal places)
+-- Use printf to match Rust's format!("{:.2}") which always pads trailing zeros
 UPDATE weather_history
-SET location_key = CAST(ROUND(lat, 2) AS TEXT) || ',' || CAST(ROUND(lon, 2) AS TEXT)
+SET location_key = printf('%.2f', ROUND(lat, 2)) || ',' || printf('%.2f', ROUND(lon, 2))
 WHERE location_key IS NULL;
 
 -- Deduplicate: keep the row with the lowest id for each (location_key, timestamp, units) group
