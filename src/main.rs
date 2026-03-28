@@ -8,6 +8,7 @@ mod devices;
 mod error;
 mod extractors;
 mod forecast;
+mod geocode;
 mod history;
 mod metrics;
 mod middleware;

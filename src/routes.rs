@@ -14,6 +14,7 @@ use crate::air_quality::handlers as air_quality_handlers;
 use crate::config::RateLimitConfig;
 use crate::devices::handlers as devices_handlers;
 use crate::forecast::handlers as forecast_handlers;
+use crate::geocode::handlers as geocode_handlers;
 use crate::history::handlers as history_handlers;
 use crate::metrics::track_metrics;
 use crate::middleware::{require_api_key, DeviceApiKey};
@@ -125,6 +126,11 @@ fn air_quality_routes() -> Router<AppState> {
     )
 }
 
+/// Build the geocode API routes
+fn geocode_routes() -> Router<AppState> {
+    Router::new().route("/geocode", get(geocode_handlers::geocode))
+}
+
 /// Build the history API routes
 fn history_routes() -> Router<AppState> {
     Router::new()
@@ -144,6 +150,7 @@ pub fn api_v1_routes(
     Router::new()
         .merge(weather_routes())
         .merge(forecast_routes())
+        .merge(geocode_routes())
         .merge(air_quality_routes())
         .merge(history_routes())
         .merge(scheduler_routes(rate_limit))
