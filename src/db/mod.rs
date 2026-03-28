@@ -69,6 +69,21 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), DbError> {
     let migration_003 = include_str!("../../migrations/003_create_geocoding_cache.sql");
     sqlx::raw_sql(migration_003).execute(pool).await?;
 
+    // Migration 004: Add location_key column with backfill and dedup.
+    // The ALTER TABLE ADD COLUMN is not idempotent in SQLite, so we attempt it
+    // separately and ignore "duplicate column" errors on subsequent runs.
+    let _ = sqlx::raw_sql(
+        "ALTER TABLE weather_history ADD COLUMN location_key TEXT;"
+    )
+    .execute(pool)
+    .await;
+
+    let migration_004 = include_str!("../../migrations/004_add_location_key.sql");
+    sqlx::raw_sql(migration_004)
+        .execute(pool)
+        .await
+        .map_err(|e| DbError::Migration(format!("Migration 004 failed: {}", e)))?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }
