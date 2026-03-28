@@ -8,6 +8,7 @@ use crate::geocode::models::make_location_key;
 #[derive(Debug, Clone)]
 pub struct HistoryRecord {
     pub city: String,
+    #[allow(dead_code)]
     pub location_key: String,
     pub lat: f64,
     pub lon: f64,
