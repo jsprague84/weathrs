@@ -82,6 +82,11 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), DbError> {
         .await
         .map_err(|e| DbError::Migration(format!("Migration 004 failed: {}", e)))?;
 
+    sqlx::raw_sql(include_str!("../../migrations/005_create_tile_usage.sql"))
+        .execute(pool)
+        .await
+        .map_err(|e| DbError::Migration(format!("Migration 005 failed: {}", e)))?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }
