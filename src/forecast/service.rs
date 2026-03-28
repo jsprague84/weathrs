@@ -13,6 +13,7 @@ use crate::impl_into_response;
 
 const GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/direct";
 const ZIP_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/zip";
+const REVERSE_GEOCODING_API_URL: &str = "https://api.openweathermap.org/geo/1.0/reverse";
 const ONE_CALL_API_URL: &str = "https://api.openweathermap.org/data/3.0/onecall";
 
 #[derive(Error, Debug)]
@@ -81,6 +82,15 @@ impl ForecastService {
         }
     }
 
+    /// Check if input looks like "lat,lon" coordinates (e.g., "41.51,-90.77")
+    fn is_coordinates(input: &str) -> bool {
+        let parts: Vec<&str> = input.split(',').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+        parts[0].trim().parse::<f64>().is_ok() && parts[1].trim().parse::<f64>().is_ok()
+    }
+
     /// Check if input looks like a zip code (digits only, or digits,country)
     fn is_zip_code(input: &str) -> bool {
         let parts: Vec<&str> = input.split(',').collect();
@@ -111,8 +121,17 @@ impl ForecastService {
 
         tracing::debug!(location = %location, "Geocoding cache miss");
 
-        // Fetch from API
-        let result = if Self::is_zip_code(location) {
+        // Determine geocoding method
+        let result = if Self::is_coordinates(location) {
+            let parts: Vec<&str> = location.split(',').collect();
+            let lat: f64 = parts[0].trim().parse().map_err(|_| {
+                ForecastError::ApiError(format!("Invalid latitude in '{}'", location))
+            })?;
+            let lon: f64 = parts[1].trim().parse().map_err(|_| {
+                ForecastError::ApiError(format!("Invalid longitude in '{}'", location))
+            })?;
+            self.reverse_geocode(lat, lon).await
+        } else if Self::is_zip_code(location) {
             self.geocode_zip(location).await
         } else {
             self.geocode_city(location).await
@@ -195,6 +214,41 @@ impl ForecastService {
 
         let location: ZipGeoLocation = response.json().await?;
         Ok(location.into())
+    }
+
+    /// Reverse geocode coordinates to a location name
+    async fn reverse_geocode(&self, lat: f64, lon: f64) -> Result<GeoLocation, ForecastError> {
+        self.api_budget.record_call();
+        metrics::counter!(crate::metrics::OWM_API_CALLS, "endpoint" => "geocoding_reverse")
+            .increment(1);
+
+        tracing::debug!(lat = %lat, lon = %lon, "Reverse geocoding coordinates");
+
+        let response = self
+            .client
+            .get(REVERSE_GEOCODING_API_URL)
+            .query(&[
+                ("lat", lat.to_string()),
+                ("lon", lon.to_string()),
+                ("limit", "1".to_string()),
+                ("appid", self.api_key.clone()),
+            ])
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(ForecastError::ApiError(format!(
+                "Reverse geocoding failed: {}",
+                text
+            )));
+        }
+
+        let locations: Vec<GeoLocation> = response.json().await?;
+        locations.into_iter().next().ok_or_else(|| {
+            ForecastError::CityNotFound(format!("{},{}", lat, lon))
+        })
     }
 
     /// Get full forecast using One Call API 3.0
