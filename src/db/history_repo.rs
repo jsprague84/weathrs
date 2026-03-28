@@ -99,6 +99,12 @@ pub trait HistoryRepository: Send + Sync {
 
     /// Get aggregate stats per city
     async fn get_stats(&self) -> Result<HistoryStats, DbError>;
+
+    /// Delete all records for a given location key
+    async fn delete_by_location_key(&self, location_key: &str) -> Result<u64, DbError>;
+
+    /// Normalize city names for locations that have multiple different city values
+    async fn cleanup_duplicate_locations(&self) -> Result<u64, DbError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -434,6 +440,33 @@ impl HistoryRepository for SqliteHistoryRepository {
         }
 
         Ok(missing)
+    }
+
+    async fn delete_by_location_key(&self, location_key: &str) -> Result<u64, DbError> {
+        let result = sqlx::query("DELETE FROM weather_history WHERE location_key = ?")
+            .bind(location_key)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    async fn cleanup_duplicate_locations(&self) -> Result<u64, DbError> {
+        let result = sqlx::query(
+            "UPDATE weather_history
+             SET city = (
+               SELECT city FROM weather_history h2
+               WHERE h2.location_key = weather_history.location_key
+               GROUP BY city ORDER BY COUNT(*) DESC LIMIT 1
+             )
+             WHERE location_key IN (
+               SELECT location_key FROM weather_history
+               GROUP BY location_key
+               HAVING COUNT(DISTINCT city) > 1
+             )",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
     }
 
     async fn get_stats(&self) -> Result<HistoryStats, DbError> {

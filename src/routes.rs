@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::State,
     middleware,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Extension, Router,
 };
 use tower_governor::{
@@ -140,6 +140,11 @@ fn history_routes() -> Router<AppState> {
             get(history_handlers::get_daily_history),
         )
         .route("/history/{city}/trends", get(history_handlers::get_trends))
+        .route(
+            "/history/location/{location_key}",
+            delete(history_handlers::delete_history),
+        )
+        .route("/history/cleanup", post(history_handlers::cleanup_history))
 }
 
 /// Build all API v1 routes

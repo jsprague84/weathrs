@@ -172,6 +172,17 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&api_budget),
     ));
 
+    // Run duplicate location cleanup on startup
+    match history_service.cleanup_duplicate_locations().await {
+        Ok(updated) if updated > 0 => {
+            tracing::info!("Cleaned up {} duplicate location records", updated);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!("Duplicate location cleanup failed: {}", e);
+        }
+    }
+
     // Initialize air quality service
     let air_quality_service = Arc::new(AirQualityService::new(
         http_client.clone(),

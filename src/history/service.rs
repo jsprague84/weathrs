@@ -602,6 +602,20 @@ impl HistoryService {
         self.repo.get_stats().await.map_err(db_err)
     }
 
+    pub async fn delete_by_location_key(&self, location_key: &str) -> Result<u64, HistoryError> {
+        self.repo
+            .delete_by_location_key(location_key)
+            .await
+            .map_err(db_err)
+    }
+
+    pub async fn cleanup_duplicate_locations(&self) -> Result<u64, HistoryError> {
+        self.repo
+            .cleanup_duplicate_locations()
+            .await
+            .map_err(db_err)
+    }
+
     /// Get missing days for a location within a time range.
     /// Returns midnight-UTC timestamps for days that have no data in the DB.
     /// The `location_key` should be a canonical key from `make_location_key()`.
